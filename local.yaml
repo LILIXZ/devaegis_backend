@@ -17,7 +17,7 @@ services:
     command: /entrypoint.sh
     privileged: true
     ports:
-      - "8000:8000"
+      - "7999:7999"
     environment:
         FLASK_APP: app.py
     env_file:
