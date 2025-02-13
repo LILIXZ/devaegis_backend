@@ -1,0 +1,28 @@
+# this is to prepare local development environment
+version: "3.8"
+name: "devaegis_backend_service"
+
+services:
+  devaegis_backend:
+    container_name: devaegis_backend
+    image: devaegis_backend:local
+#    networks:
+#      - scantist-network
+    build:
+      context: .
+      dockerfile: compose/local/devaegis/Dockerfile
+    volumes:
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: /entrypoint.sh
+    privileged: true
+    ports:
+      - "4097:4097"
+    environment:
+        FLASK_APP: app.py
+    env_file:
+      - .env
+
+#networks:
+#  scantist-network:
+#    name: scantist-network
