@@ -9,5 +9,5 @@ gunicorn 'app:create_app()' \
     --reload \
     --timeout 180 \
     --workers 6 \
-    --bind 0.0.0.0:7999 \
+    --bind 0.0.0.0:8000 \
     --limit-request-line 0
