@@ -1,0 +1,2430 @@
+Name,Path,Stage,Job Name,Description,Keywords,Notes,Script
+Browser-Performance-Testing.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Browser-Performance-Testing.latest.gitlab-ci.yml,performance,browser_performance,"The browser_performance job in GitLab CI/CD is designed to assess the performance of web applications by utilizing sitespeed.io. This job runs performance tests against specified URLs and generates detailed reports, which can be instrumental in identifying and addressing performance bottlenecks in web applications.","Browser Performance Testing
+sitespeed.io
+Web Application Performance
+Performance Monitoring
+Regression Testing
+Benchmarking",docker service availability during execution,"# Read more about the feature here: https://docs.gitlab.com/ee/ci/testing/browser_performance_testing.html
+
+browser_performance:
+  stage: performance
+  image: docker:27.3
+  allow_failure: true
+  variables:
+    DOCKER_TLS_CERTDIR: """"
+    SITESPEED_IMAGE: sitespeedio/sitespeed.io
+    SITESPEED_VERSION: latest
+    SITESPEED_OPTIONS: ''
+  services:
+    - name: docker:27.3-dind
+      command: ['--tls=false', '--host=tcp://0.0.0.0:2375']
+  script:
+    - |
+      if ! docker info &>/dev/null; then
+        if [ -z ""$DOCKER_HOST"" ] && [ -n ""$KUBERNETES_PORT"" ]; then
+          export DOCKER_HOST='tcp://localhost:2375'
+        fi
+      fi
+    - export CI_ENVIRONMENT_URL=$(cat environment_url.txt)
+    - git clone --branch https://gitlab.com/gitlab-org/gl-performance.git gitlab-exporter
+    - apk --no-cache add npm
+    - npm install --prefix gitlab-exporter/
+    - mkdir sitespeed-results
+    - |
+      function propagate_env_vars() {
+        CURRENT_ENV=$(printenv)
+
+        for VAR_NAME; do
+          echo $CURRENT_ENV | grep ""${VAR_NAME}="" > /dev/null && echo ""--env $VAR_NAME ""
+        done
+      }
+    - |
+      if [ -f .gitlab-urls.txt ]
+      then
+        sed -i -e 's@^@'""$CI_ENVIRONMENT_URL""'@' .gitlab-urls.txt
+        docker run \
+          $(propagate_env_vars \
+            auto_proxy \
+            https_proxy \
+            http_proxy \
+            no_proxy \
+            AUTO_PROXY \
+            HTTPS_PROXY \
+            HTTP_PROXY \
+            NO_PROXY \
+          ) \
+          --shm-size=1g --rm -v ""$(pwd)"":/sitespeed.io $SITESPEED_IMAGE:$SITESPEED_VERSION --plugins.add ./gitlab-exporter/index.js --cpu --outputFolder sitespeed-results .gitlab-urls.txt $SITESPEED_OPTIONS
+      else
+        docker run \
+          $(propagate_env_vars \
+            auto_proxy \
+            https_proxy \
+            http_proxy \
+            no_proxy \
+            AUTO_PROXY \
+            HTTPS_PROXY \
+            HTTP_PROXY \
+            NO_PROXY \
+          ) \
+          --shm-size=1g --rm -v ""$(pwd)"":/sitespeed.io $SITESPEED_IMAGE:$SITESPEED_VERSION --plugins.add ./gitlab-exporter/index.js --cpu --outputFolder sitespeed-results ""$CI_ENVIRONMENT_URL"" $SITESPEED_OPTIONS
+      fi
+    - mv sitespeed-results/data/performance.json browser-performance.json
+  artifacts:
+    paths:
+      - sitespeed-results/
+    reports:
+      browser_performance: browser-performance.json
+  rules:
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$BROWSER_PERFORMANCE_DISABLED'
+      when: never
+    - if: '$CI_COMMIT_TAG || $CI_COMMIT_BRANCH'
+"
+Build.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Build.latest.gitlab-ci.yml,build,build,"The build job is an executable job designed to build your application. It utilizes GitLab's Auto Build feature, which is part of Auto DevOps. ","Auto DevOps
+Auto Build
+Docker-in-Docker
+build automation",confirm that /build/build.sh script exists and is executable within the specified Docker image.,"variables:
+  AUTO_BUILD_IMAGE_VERSION: 'v4.3.0'
+
+build:
+  stage: build
+  image: '${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cluster-integration/auto-build-image:${AUTO_BUILD_IMAGE_VERSION}'
+  variables:
+    DOCKER_TLS_CERTDIR: ''
+  services:
+    - name: 'docker:20.10.12-dind'
+      command: ['--tls=false', '--host=tcp://0.0.0.0:2375']
+  script:
+    - |
+      if [[ -z ""$CI_COMMIT_TAG"" ]]; then
+        export CI_APPLICATION_REPOSITORY=${CI_APPLICATION_REPOSITORY:-$CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG}
+        export CI_APPLICATION_TAG=${CI_APPLICATION_TAG:-$CI_COMMIT_SHA}
+      else
+        export CI_APPLICATION_REPOSITORY=${CI_APPLICATION_REPOSITORY:-$CI_REGISTRY_IMAGE}
+        export CI_APPLICATION_TAG=${CI_APPLICATION_TAG:-$CI_COMMIT_TAG}
+      fi
+    - /build/build.sh
+  artifacts:
+    reports:
+      dotenv: gl-auto-build-variables.env
+  rules:
+    - if: '$BUILD_DISABLED'
+      when: never
+    - if: '$AUTO_DEVOPS_PLATFORM_TARGET == ""EC2""'
+      when: never
+    - if: '$CI_COMMIT_TAG || $CI_COMMIT_BRANCH'"
+Build.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Build.latest.gitlab-ci.yml,build,build_artifact,The build_artifact job is a placeholder job intended to prompt users to define their own build_artifact job within their .gitlab-ci.yml file. It is not meant to be executed as-is.,"Auto DevOps
+Auto Build
+Docker-in-Docker
+build automation",User must be familiar with DevOps and able to implement concrete build artifact job by self.,"build_artifact:
+  stage: build
+  script:
+    - printf ""To build your project, please create a build_artifact job into your .gitlab-ci.yml file.\nMore information at https://docs.gitlab.com/ee/ci/cloud_deployment\n""
+    - exit 1
+  rules:
+    - if: '$BUILD_DISABLED'
+      when: never
+    - if: '$AUTO_DEVOPS_PLATFORM_TARGET == ""EC2""'
+"
+CF-Provision.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/CF-Provision.gitlab-ci.yml,provision,cloud_formation,This job is designed to manage AWS CloudFormation stacks within a CI/CD pipeline. It utilizes the gl-cloudformation create-stack command to create or update CloudFormation stacks based on the provided templates.,"AWS CloudFormation
+Infrastructure as Code (IaC)
+Automated Provisioning
+AWS Resource Management",AWS,"stages:
+  - provision
+
+cloud_formation:
+  image: '${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cloud-deploy/aws-cloudformation:latest'
+  stage: provision
+  script:
+    - gl-cloudformation create-stack
+  rules:
+    - if: '($AUTO_DEVOPS_PLATFORM_TARGET != ""EC2"") && ($AUTO_DEVOPS_PLATFORM_TARGET != ""ECS"")'
+      when: never
+    - if: '$CI_KUBERNETES_ACTIVE || $KUBECONFIG'
+      when: never
+    - if: '$CI_COMMIT_TAG || $CI_COMMIT_BRANCH'
+"
+Code-Intelligence.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Code-Intelligence.gitlab-ci.yml,test,code_intelligence_go,"The job is a GitLab CI/CD configuration designed to generate code intelligence data for Go projects. This job utilizes the lsif-go tool to produce an LSIF (Language Server Index Format) file, which enhances code navigation features within GitLab, such as ""Go to definition"" and ""Find references.""","Code Intelligence
+Go
+LSIF
+lsif-go
+Code Navigation
+Static Analysis
+Continuous Integration
+Sourcegraph",Go Project,"code_intelligence_go:
+  stage: test
+  needs: []
+  allow_failure: true
+  image: sourcegraph/lsif-go:v1
+  rules:
+    - if: $CODE_INTELLIGENCE_DISABLED
+      when: never
+    - if: $CI_COMMIT_BRANCH
+      exists:
+        - '**/*.go'
+  script:
+    - lsif-go
+  artifacts:
+    reports:
+      lsif: dump.lsif
+"
+Code-Quality.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Code-Quality.gitlab-ci.yml,test,code_quality,"This job is designed to analyze your source code's quality and complexity, helping maintain simplicity, readability, and ease of maintenance. It utilizes the CodeClimate engine to run various static analysis tools, providing insights into potential code quality issues.","Code Quality
+Static Analysis
+CodeClimate
+Docker-in-Docker
+Static Code Analysis
+Code Quality Report
+Merge Request Widget
+Pipeline Artifacts",docker,"code_quality:
+  stage: test
+  image: docker:20.10.12
+  allow_failure: true
+  services:
+    - name: 'docker:20.10.12-dind'
+      command: ['--tls=false', '--host=tcp://0.0.0.0:2375']
+  variables:
+    DOCKER_DRIVER: overlay2
+    DOCKER_CERT_PATH: """"
+    DOCKER_TLS_CERTDIR: """"
+    DOCKER_TLS_VERIFY: """"
+    CODE_QUALITY_IMAGE_TAG: ""0.96.0-gitlab.1""
+    CODE_QUALITY_IMAGE: ""$CI_TEMPLATE_REGISTRY_HOST/gitlab-org/ci-cd/codequality:$CODE_QUALITY_IMAGE_TAG""
+    DOCKER_SOCKET_PATH: /var/run/docker.sock
+  needs: []
+  script:
+    - export SOURCE_CODE=${SOURCE_CODE:-$PWD}
+    - |
+      if ! docker info &>/dev/null; then
+        if [ -z ""$DOCKER_HOST"" ] && [ -n ""$KUBERNETES_PORT"" ]; then
+          export DOCKER_HOST='tcp://localhost:2375'
+        fi
+      fi
+    - | # this is required to avoid undesirable reset of Docker image ENV variables being set on build stage
+      function propagate_env_vars() {
+        CURRENT_ENV=$(printenv)
+
+        for VAR_NAME; do
+          echo $CURRENT_ENV | grep ""${VAR_NAME}="" > /dev/null && echo ""--env $VAR_NAME ""
+        done
+      }
+    - |
+      if [ -n ""$CODECLIMATE_REGISTRY_USERNAME"" ] && [ -n ""$CODECLIMATE_REGISTRY_PASSWORD"" ] && [ -n ""$CODECLIMATE_PREFIX"" ]; then
+        CODECLIMATE_REGISTRY=${CODECLIMATE_PREFIX%%/*}
+        docker login ""$CODECLIMATE_REGISTRY"" --username ""$CODECLIMATE_REGISTRY_USERNAME"" --password ""$CODECLIMATE_REGISTRY_PASSWORD""
+      fi
+    - docker pull --quiet ""$CODE_QUALITY_IMAGE""
+    - |
+      docker run --rm \
+        $(propagate_env_vars \
+          SOURCE_CODE \
+          TIMEOUT_SECONDS \
+          CODECLIMATE_DEBUG \
+          CODECLIMATE_DEV \
+          REPORT_STDOUT \
+          REPORT_FORMAT \
+          ENGINE_MEMORY_LIMIT_BYTES \
+          CODECLIMATE_PREFIX \
+          CODECLIMATE_REGISTRY_USERNAME \
+          CODECLIMATE_REGISTRY_PASSWORD \
+          DOCKER_SOCKET_PATH \
+        ) \
+        --volume ""$PWD"":/code \
+        --volume ""$DOCKER_SOCKET_PATH"":/var/run/docker.sock \
+        ""$CODE_QUALITY_IMAGE"" /code
+  artifacts:
+    access: 'developer'
+    reports:
+      codequality: gl-code-quality-report.json
+    expire_in: 1 week
+  dependencies: []
+  rules:
+    - if: '$CODE_QUALITY_DISABLED'
+      when: never
+    - if: '$CI_COMMIT_TAG || $CI_COMMIT_BRANCH'
+"
+Container-Scanning.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Container-Scanning.latest.gitlab-ci.yml,test,container_scanning,The provided configuration defines a GitLab CI/CD job named container_scanning that performs security vulnerability analysis on Docker images associated with your project. This job utilizes GitLab's Container Scanning feature to identify known vulnerabilities within your container images.,"Container Scanning
+Security Vulnerability Analysis
+Docker Image
+gtcs scan
+Vulnerability Report
+Software Bill of Materials (SBOM)",docker,"# To contribute improvements to CI/CD templates, please follow the Development guide at:
+# https://docs.gitlab.com/ee/development/cicd/templates.html
+# This specific template is located at:
+# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Container-Scanning.latest.gitlab-ci.yml
+
+# Use this template to enable container scanning in your project.
+# You should add this template to an existing `.gitlab-ci.yml` file by using the `include:`
+# keyword.
+# The template should work without modifications but you can customize the template settings if
+# needed: https://docs.gitlab.com/ee/user/application_security/container_scanning/#customizing-the-container-scanning-settings
+#
+# Requirements:
+# - A `test` stage to be present in the pipeline.
+# - You must define the image to be scanned in the CS_IMAGE variable. If CS_IMAGE is the
+#   same as $CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG, you can skip this.
+# - Container registry credentials defined by `CS_REGISTRY_USER` and `CS_REGISTRY_PASSWORD` variables if the
+# image to be scanned is in a private registry.
+# - For auto-remediation, a readable Dockerfile in the root of the project or as defined by the
+#   CS_DOCKERFILE_PATH variable.
+#
+# Configure container scanning with CI/CD variables (https://docs.gitlab.com/ee/ci/variables/index.html).
+# List of available variables: https://docs.gitlab.com/ee/user/application_security/container_scanning/#available-variables
+
+variables:
+  CS_ANALYZER_IMAGE: ""$CI_TEMPLATE_REGISTRY_HOST/security-products/container-scanning:7""
+  CS_SCHEMA_MODEL: 15
+
+# Provide a base job for extensibility until delivery of https://gitlab.com/gitlab-org/gitlab/-/issues/215470
+.container_scanning:
+  image: ""$CS_ANALYZER_IMAGE$CS_IMAGE_SUFFIX""
+  stage: test
+  variables:
+    # To provide a `vulnerability-allowlist.yml` file, override the GIT_STRATEGY variable in your
+    # `.gitlab-ci.yml` file and set it to `fetch`.
+    # For details, see the following links:
+    # https://docs.gitlab.com/ee/user/application_security/container_scanning/index.html#overriding-the-container-scanning-template
+    # https://docs.gitlab.com/ee/user/application_security/container_scanning/#vulnerability-allowlisting
+    GIT_STRATEGY: none
+  allow_failure: true
+  artifacts:
+    access: 'developer'
+    reports:
+      container_scanning: gl-container-scanning-report.json
+      cyclonedx: ""**/gl-sbom-*.cdx.json""
+    paths: [gl-container-scanning-report.json, gl-dependency-scanning-report.json, ""**/gl-sbom-*.cdx.json""]
+  dependencies: []
+  script:
+    - gtcs scan
+  rules:
+    - if: $CONTAINER_SCANNING_DISABLED == 'true' || $CONTAINER_SCANNING_DISABLED == '1'
+      when: never
+
+    # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $CI_GITLAB_FIPS_MODE == ""true"" &&
+          $CS_ANALYZER_IMAGE !~ /-(fips|ubi)\z/
+      variables:
+        CS_IMAGE_SUFFIX: -fips
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""
+
+    # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+    - if: $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+    # Add the job to branch pipelines.
+    - if: $CI_COMMIT_BRANCH &&
+          $CI_GITLAB_FIPS_MODE == ""true"" &&
+          $CS_ANALYZER_IMAGE !~ /-(fips|ubi)\z/
+      variables:
+        CS_IMAGE_SUFFIX: -fips
+    - if: $CI_COMMIT_BRANCH
+
+container_scanning:
+  extends: .container_scanning
+"
+DAST-Default-Branch-Deploy.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/DAST-Default-Branch-Deploy.gitlab-ci.yml,review & cleanup,dast_environment_deploy & stop_dast_environment,"This configuration defines jobs related to Dynamic Application Security Testing (DAST). This job is designed to deploy an environment specifically for DAST scans.
+dast_environment_deploy job deploys a temporary environment where the DAST analysis will be conducted.
+stop_dast_environment job removes the temporary environment after the DAST scan is completed.","DAST
+Dynamic Application Security Testing
+Auto Deploy
+Kubernetes
+Security Testing",Kubernetes,"variables:
+  DAST_AUTO_DEPLOY_IMAGE_VERSION: 'v2.118.0'
+
+.dast-auto-deploy:
+  image: ""${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cluster-integration/auto-deploy-image:${DAST_AUTO_DEPLOY_IMAGE_VERSION}""
+
+.common_rules: &common_rules
+  - if: $CI_DEFAULT_BRANCH != $CI_COMMIT_REF_NAME
+    when: never
+  - if: $DAST_DISABLED || $DAST_DISABLED_FOR_DEFAULT_BRANCH
+    when: never
+  - if: $DAST_WEBSITE  # we don't need to create a review app if a URL is already given
+    when: never
+
+dast_environment_deploy:
+  extends: .dast-auto-deploy
+  stage: review
+  script:
+    - auto-deploy check_kube_domain
+    - auto-deploy download_chart
+    - auto-deploy use_kube_context || true
+    - auto-deploy ensure_namespace
+    - auto-deploy initialize_tiller
+    - auto-deploy create_secret
+    - auto-deploy deploy
+    - auto-deploy persist_environment_url
+  environment:
+    name: dast-default
+    url: http://dast-$CI_PROJECT_ID-$CI_ENVIRONMENT_SLUG.$KUBE_INGRESS_BASE_DOMAIN
+    on_stop: stop_dast_environment
+  artifacts:
+    paths: [environment_url.txt]
+  rules:
+    - *common_rules
+    - if: $CI_COMMIT_BRANCH &&
+          ($CI_KUBERNETES_ACTIVE || $KUBECONFIG) &&
+          $GITLAB_FEATURES =~ /\bdast\b/
+
+stop_dast_environment:
+  extends: .dast-auto-deploy
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - auto-deploy use_kube_context || true
+    - auto-deploy initialize_tiller
+    - auto-deploy delete
+  environment:
+    name: dast-default
+    action: stop
+  needs: [""dast""]
+  rules:
+    - *common_rules
+    - if: $CI_COMMIT_BRANCH &&
+          ($CI_KUBERNETES_ACTIVE || $KUBECONFIG) &&
+          $GITLAB_FEATURES =~ /\bdast\b/
+      when: always"
+DAST-Default-Branch-Deploy.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/DAST-Default-Branch-Deploy.gitlab-ci.yml,review & cleanup,dast_ecs_environment_deploy & stop_dast_ecs_environment,"This configuration defines jobs related to Dynamic Application Security Testing (DAST). dast_ecs_environment_deploy job deploys a temporary environment on Amazon ECS for DAST analysis. 
+stop_dast_ecs_environment removes the temporary ECS environment after the DAST scan is completed.","DAST
+Dynamic Application Security Testing
+Auto Deploy
+Kubernetes
+Security Testing
+ECS","Kubernetes
+AWS ECS",".common_rules: &common_rules
+  - if: $CI_DEFAULT_BRANCH != $CI_COMMIT_REF_NAME
+    when: never
+  - if: $DAST_DISABLED || $DAST_DISABLED_FOR_DEFAULT_BRANCH
+    when: never
+  - if: $DAST_WEBSITE  # we don't need to create a review app if a URL is already given
+    when: never
+
+.ecs_image:
+  image: '${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cloud-deploy/aws-ecs:latest'
+
+.ecs_rules: &ecs_rules
+  - if: $AUTO_DEVOPS_PLATFORM_TARGET != ""ECS""
+    when: never
+  - if: $CI_KUBERNETES_ACTIVE || $KUBECONFIG
+    when: never
+
+dast_ecs_environment_deploy:
+  extends: .ecs_image
+  stage: review
+  script:
+    - ecs update-task-definition
+    - echo ""http://$(ecs get-task-hostname)"" > environment_url.txt
+  environment:
+    name: dast-default
+    on_stop: stop_dast_ecs_environment
+  artifacts:
+    paths:
+      - environment_url.txt
+  rules:
+    - *common_rules
+    - *ecs_rules
+    - if: $CI_COMMIT_BRANCH && $GITLAB_FEATURES =~ /\bdast\b/
+
+stop_dast_ecs_environment:
+  extends: .ecs_image
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - ecs stop-task
+  allow_failure: true
+  environment:
+    name: dast-default
+    action: stop
+  needs:
+    - dast
+  rules:
+    - *common_rules
+    - *ecs_rules
+    - if: $CI_COMMIT_BRANCH && $GITLAB_FEATURES =~ /\bdast\b/
+      when: always
+
+"
+Dependency-Scanning.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Dependency-Scanning.latest.gitlab-ci.yml,test,gemnasium-dependency_scanning,"The configuration defines jobs related to Dependency Scanning. Targets projects include Ruby project with Bundler package manager, PHP projects using Composer package, Go projects with Go Modules, JavaScript and TypeScript projects, Yarn project, pnpm project, .NET project using the NuGet package, C and C++ projects with the Conan package manager.","Dependency Scanning
+Security
+Vulnerability Detection
+Gemnasium
+Ruby
+Bundler
+PHP
+Composer
+Go
+Go Module
+JavaScript
+TypeScript
+Yarn
+pnpm
+.NET
+NuGet
+C
+C++
+Conan",Project language,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  DS_EXCLUDED_ANALYZERS: """"
+  DS_EXCLUDED_PATHS: ""spec, test, tests, tmp""
+  DS_MAJOR_VERSION: 5
+  DS_SCHEMA_MODEL: 15
+
+dependency_scanning:
+  stage: test
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+  artifacts:
+    access: 'developer'
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+  dependencies: []
+  rules:
+    - when: never
+
+.ds-analyzer:
+  extends: dependency_scanning
+  allow_failure: true
+  variables:
+    # DS_ANALYZER_IMAGE is an undocumented variable used internally to allow QA to
+    # override the analyzer image with a custom value. This may be subject to change or
+    # breakage across GitLab releases.
+    DS_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/$DS_ANALYZER_NAME:$DS_MAJOR_VERSION""
+    # DS_ANALYZER_NAME is an undocumented variable used in job definitions
+    # to inject the analyzer name in the image name.
+    DS_ANALYZER_NAME: """"
+  image:
+    name: ""$DS_ANALYZER_IMAGE$DS_IMAGE_SUFFIX""
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+.cyclonedx-reports:
+  artifacts:
+    access: 'developer'
+    paths:
+      - ""**/gl-sbom-*.cdx.json""
+    reports:
+      cyclonedx: ""**/gl-sbom-*.cdx.json""
+
+.gemnasium-shared-rule:
+  exists:
+    - '**/{Gemfile.lock,composer.lock,gems.locked,go.sum,npm-shrinkwrap.json,package-lock.json,yarn.lock,pnpm-lock.yaml,packages.lock.json,conan.lock}'
+
+gemnasium-dependency_scanning:
+  extends:
+    - .ds-analyzer
+    - .cyclonedx-reports
+  variables:
+    DS_ANALYZER_NAME: ""gemnasium""
+    GEMNASIUM_LIBRARY_SCAN_ENABLED: ""true""
+  rules:
+    - if: $DEPENDENCY_SCANNING_DISABLED == 'true' || $DEPENDENCY_SCANNING_DISABLED == '1'
+      when: never
+    - if: $DS_EXCLUDED_ANALYZERS =~ /gemnasium([^-]|$)/
+      when: never
+
+      # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      exists: !reference [.gemnasium-shared-rule, exists]
+      variables:
+        DS_IMAGE_SUFFIX: ""-fips""
+        DS_REMEDIATE: ""false""
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/
+      exists: !reference [.gemnasium-shared-rule, exists]
+
+      # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+    - if: $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+      # Add the job to branch pipelines.
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      exists: !reference [.gemnasium-shared-rule, exists]
+      variables:
+        DS_IMAGE_SUFFIX: ""-fips""
+        DS_REMEDIATE: ""false""
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/
+      exists: !reference [.gemnasium-shared-rule, exists]
+
+"
+Dependency-Scanning.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Dependency-Scanning.latest.gitlab-ci.yml,test,gemnasium-maven-dependency_scanning,"The configuration defines jobs related to Dependency Scanning. Targets projects include Java and Scala projects. The projects may contain gradle file, pom.xml, build.sbt file.","Dependency Scanning
+Security
+Vulnerability Detection
+Gemnasium
+Java
+Scala
+Gradle
+Scala Build Tool
+sbt
+Maven",Project language,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  DS_EXCLUDED_ANALYZERS: """"
+  DS_EXCLUDED_PATHS: ""spec, test, tests, tmp""
+  DS_MAJOR_VERSION: 5
+  DS_SCHEMA_MODEL: 15
+
+dependency_scanning:
+  stage: test
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+  artifacts:
+    access: 'developer'
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+  dependencies: []
+  rules:
+    - when: never
+
+.ds-analyzer:
+  extends: dependency_scanning
+  allow_failure: true
+  variables:
+    # DS_ANALYZER_IMAGE is an undocumented variable used internally to allow QA to
+    # override the analyzer image with a custom value. This may be subject to change or
+    # breakage across GitLab releases.
+    DS_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/$DS_ANALYZER_NAME:$DS_MAJOR_VERSION""
+    # DS_ANALYZER_NAME is an undocumented variable used in job definitions
+    # to inject the analyzer name in the image name.
+    DS_ANALYZER_NAME: """"
+  image:
+    name: ""$DS_ANALYZER_IMAGE$DS_IMAGE_SUFFIX""
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+.cyclonedx-reports:
+  artifacts:
+    access: 'developer'
+    paths:
+      - ""**/gl-sbom-*.cdx.json""
+    reports:
+      cyclonedx: ""**/gl-sbom-*.cdx.json""
+
+.gemnasium-shared-rule:
+  exists:
+    - '**/{Gemfile.lock,composer.lock,gems.locked,go.sum,npm-shrinkwrap.json,package-lock.json,yarn.lock,pnpm-lock.yaml,packages.lock.json,conan.lock}'
+
+.gemnasium-maven-shared-rule:
+  exists:
+    - '**/{build.gradle,build.gradle.kts,build.sbt,pom.xml}'
+
+gemnasium-maven-dependency_scanning:
+  extends:
+    - .ds-analyzer
+    - .cyclonedx-reports
+  variables:
+    DS_ANALYZER_NAME: ""gemnasium-maven""
+  rules:
+    - if: $DEPENDENCY_SCANNING_DISABLED == 'true' || $DEPENDENCY_SCANNING_DISABLED == '1'
+      when: never
+    - if: $DS_EXCLUDED_ANALYZERS =~ /gemnasium-maven/
+      when: never
+
+    # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      exists: !reference [.gemnasium-maven-shared-rule, exists]
+      variables:
+        DS_IMAGE_SUFFIX: ""-fips""
+        DS_REMEDIATE: ""false""
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/
+      exists: !reference [.gemnasium-maven-shared-rule, exists]
+
+      # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+    - if: $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+      # Add the job to branch pipelines.
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      exists: !reference [.gemnasium-maven-shared-rule, exists]
+      variables:
+        DS_IMAGE_SUFFIX: ""-fips""
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/
+      exists: !reference [.gemnasium-maven-shared-rule, exists]
+"
+Dependency-Scanning.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Dependency-Scanning.latest.gitlab-ci.yml,test,gemnasium-python-dependency_scanning,"The configuration defines jobs related to Dependency Scanning. Targets projects include Python project. The projects may contain pipfile, requirements.txt file, Poetry.lock file, uv.lock file.","Dependency Scanning
+Security
+Vulnerability Detection
+Gemnasium
+Python
+pipfile
+poetry.lock
+uv.lock",Project language,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  DS_EXCLUDED_ANALYZERS: """"
+  DS_EXCLUDED_PATHS: ""spec, test, tests, tmp""
+  DS_MAJOR_VERSION: 5
+  DS_SCHEMA_MODEL: 15
+
+dependency_scanning:
+  stage: test
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+  artifacts:
+    access: 'developer'
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+  dependencies: []
+  rules:
+    - when: never
+
+.ds-analyzer:
+  extends: dependency_scanning
+  allow_failure: true
+  variables:
+    # DS_ANALYZER_IMAGE is an undocumented variable used internally to allow QA to
+    # override the analyzer image with a custom value. This may be subject to change or
+    # breakage across GitLab releases.
+    DS_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/$DS_ANALYZER_NAME:$DS_MAJOR_VERSION""
+    # DS_ANALYZER_NAME is an undocumented variable used in job definitions
+    # to inject the analyzer name in the image name.
+    DS_ANALYZER_NAME: """"
+  image:
+    name: ""$DS_ANALYZER_IMAGE$DS_IMAGE_SUFFIX""
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+.cyclonedx-reports:
+  artifacts:
+    access: 'developer'
+    paths:
+      - ""**/gl-sbom-*.cdx.json""
+    reports:
+      cyclonedx: ""**/gl-sbom-*.cdx.json""
+
+.gemnasium-python-shared-rule:
+  exists:
+    - '**/{requirements.txt,requirements.pip,Pipfile,Pipfile.lock,requires.txt,setup.py,poetry.lock,uv.lock}'
+
+gemnasium-python-dependency_scanning:
+  extends:
+    - .ds-analyzer
+    - .cyclonedx-reports
+  variables:
+    DS_ANALYZER_NAME: ""gemnasium-python""
+  rules:
+    - if: $DEPENDENCY_SCANNING_DISABLED == 'true' || $DEPENDENCY_SCANNING_DISABLED == '1'
+      when: never
+    - if: $DS_EXCLUDED_ANALYZERS =~ /gemnasium-python/
+      when: never
+
+    # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      exists: !reference [.gemnasium-python-shared-rule, exists]
+      variables:
+        DS_IMAGE_SUFFIX: ""-fips""
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/
+      exists: !reference [.gemnasium-python-shared-rule, exists]
+    # Support passing of $PIP_REQUIREMENTS_FILE
+    #   See https://docs.gitlab.com/ee/user/application_security/dependency_scanning/#configuring-specific-analyzers-used-by-dependency-scanning
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $PIP_REQUIREMENTS_FILE &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      variables:
+        DS_IMAGE_SUFFIX: ""-fips""
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $PIP_REQUIREMENTS_FILE
+
+    # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+    - if: $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+    # Add the job to branch pipelines.
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      exists: !reference [.gemnasium-python-shared-rule, exists]
+      variables:
+        DS_IMAGE_SUFFIX: ""-fips""
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/
+      exists: !reference [.gemnasium-python-shared-rule, exists]
+    # Support passing of $PIP_REQUIREMENTS_FILE
+    # See https://docs.gitlab.com/ee/user/application_security/dependency_scanning/#configuring-specific-analyzers-used-by-dependency-scanning
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $PIP_REQUIREMENTS_FILE &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      variables:
+        DS_IMAGE_SUFFIX: ""-fips""
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bdependency_scanning\b/ &&
+          $PIP_REQUIREMENTS_FILE
+
+"
+Deploy.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Deploy.latest.gitlab-ci.yml,review & cleanup,review & stop_review,"This job deploys the application to a temporary review environment for testing and validation. It performs Kubernetes domain checks, downloads the Helm chart, sets up the Kubernetes context and namespace, initializes Helm's Tiller, creates necessary secrets, deploys the application, and records the environment URL. The stop_review job cleans up the temporary review environment once it's no longer needed. It utilizes the Kubernetes context, initializes Tiller, and deletes the deployed resources.","Auto DevOps
+Kubernetes Deployment
+Helm Charts
+Review Apps
+Environment Management",,"
+variables:
+  AUTO_DEPLOY_IMAGE_VERSION: 'v2.118.0'
+.auto-deploy:
+  image: ""${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cluster-integration/auto-deploy-image:${AUTO_DEPLOY_IMAGE_VERSION}""
+  dependencies: []
+review:
+  extends: .auto-deploy
+  stage: review
+  script:
+    - auto-deploy check_kube_domain
+    - auto-deploy download_chart
+    - auto-deploy use_kube_context
+    - auto-deploy ensure_namespace
+    - auto-deploy initialize_tiller
+    - auto-deploy create_secret
+    - auto-deploy deploy
+    - auto-deploy persist_environment_url
+  environment:
+    name: review/$CI_COMMIT_REF_NAME
+    url: http://$CI_PROJECT_ID-$CI_ENVIRONMENT_SLUG.$KUBE_INGRESS_BASE_DOMAIN
+    on_stop: stop_review
+  artifacts:
+    paths: [environment_url.txt, tiller.log]
+    when: always
+  rules:
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: never
+    - if: '$REVIEW_DISABLED'
+      when: never
+    - if: '$CI_COMMIT_TAG || $CI_COMMIT_BRANCH'
+stop_review:
+  extends: .auto-deploy
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - auto-deploy use_kube_context
+    - auto-deploy initialize_tiller
+    - auto-deploy delete
+  environment:
+    name: review/$CI_COMMIT_REF_NAME
+    action: stop
+  allow_failure: true
+  rules:
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: never
+    - if: '$REVIEW_DISABLED'
+      when: never
+    - if: '$CI_COMMIT_TAG || $CI_COMMIT_BRANCH'
+      when: manual"
+Deploy.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Deploy.latest.gitlab-ci.yml,staging,staging,"This job deploys the application to a staging environment for further testing before production release. It performs Kubernetes domain checks, downloads the Helm chart, sets up the Kubernetes context and namespace, initializes Helm's Tiller, creates necessary secrets, deploys the application.","Auto DevOps
+Kubernetes Deployment
+Helm Charts
+Review Apps
+Environment Management",,"variables:
+  AUTO_DEPLOY_IMAGE_VERSION: 'v2.118.0'
+
+.auto-deploy:
+  image: ""${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cluster-integration/auto-deploy-image:${AUTO_DEPLOY_IMAGE_VERSION}""
+  dependencies: []
+
+# Staging deploys are disabled by default since
+# continuous deployment to production is enabled by default
+# If you prefer to automatically deploy to staging and
+# only manually promote to production, enable this job by setting
+# STAGING_ENABLED.
+
+staging:
+  extends: .auto-deploy
+  stage: staging
+  script:
+    - auto-deploy check_kube_domain
+    - auto-deploy download_chart
+    - auto-deploy use_kube_context
+    - auto-deploy ensure_namespace
+    - auto-deploy initialize_tiller
+    - auto-deploy create_secret
+    - auto-deploy deploy
+  environment:
+    name: staging
+    url: http://$CI_PROJECT_PATH_SLUG-staging.$KUBE_INGRESS_BASE_DOMAIN
+  rules:
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      when: never
+    - if: '$STAGING_ENABLED'
+"
+Deploy.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Deploy.latest.gitlab-ci.yml,canary,canary,"This job performs a canary release by deploying the application to a subset of the production environment, allowing monitoring and validation before a full-scale release. It performs Kubernetes domain checks, downloads the Helm chart, sets up the Kubernetes context and namespace, initializes Helm's Tiller, creates necessary secrets, deploys the application. It deploys the application to the production environment with a specified percentage (e.g., 50%) of traffic directed to the new version.","Auto DevOps
+Kubernetes Deployment
+Helm Charts
+Review Apps
+Canary Deployment
+Environment Management",,"variables:
+  AUTO_DEPLOY_IMAGE_VERSION: 'v2.118.0'
+
+.auto-deploy:
+  image: ""${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cluster-integration/auto-deploy-image:${AUTO_DEPLOY_IMAGE_VERSION}""
+  dependencies: []
+
+# Canaries are disabled by default, but if you want them,
+# and know what the downsides are, you can enable this by setting
+# CANARY_ENABLED.
+
+canary:
+  extends: .auto-deploy
+  stage: canary
+  allow_failure: true
+  script:
+    - auto-deploy check_kube_domain
+    - auto-deploy download_chart
+    - auto-deploy use_kube_context
+    - auto-deploy ensure_namespace
+    - auto-deploy initialize_tiller
+    - auto-deploy create_secret
+    - auto-deploy deploy canary 50
+  environment:
+    name: production
+    url: http://$CI_PROJECT_PATH_SLUG.$KUBE_INGRESS_BASE_DOMAIN
+  rules:
+    - if: '$CI_DEPLOY_FREEZE'
+      when: never
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      when: never
+    - if: '$CANARY_ENABLED'
+      when: manual
+
+"
+Deploy.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Deploy.latest.gitlab-ci.yml,production,production,"This job deploys the application to the production environment for end-users. It performs Kubernetes domain checks, downloads the Helm chart, sets up the Kubernetes context and namespace, initializes Helm's Tiller, creates necessary secrets, deploys the application, and records the environment URL. It also cleans up any previous canary deployments.","Auto DevOps
+Kubernetes Deployment
+Helm Charts
+Environment Management",,"variables:
+  AUTO_DEPLOY_IMAGE_VERSION: 'v2.118.0'
+
+.auto-deploy:
+  image: ""${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cluster-integration/auto-deploy-image:${AUTO_DEPLOY_IMAGE_VERSION}""
+  dependencies: []
+
+.production: &production_template
+  extends: .auto-deploy
+  stage: production
+  script:
+    - auto-deploy check_kube_domain
+    - auto-deploy download_chart
+    - auto-deploy use_kube_context
+    - auto-deploy ensure_namespace
+    - auto-deploy initialize_tiller
+    - auto-deploy create_secret
+    - auto-deploy deploy
+    - auto-deploy delete canary
+    - auto-deploy persist_environment_url
+  environment:
+    name: production
+    url: http://$CI_PROJECT_PATH_SLUG.$KUBE_INGRESS_BASE_DOMAIN
+  artifacts:
+    paths: [environment_url.txt, tiller.log]
+    when: always
+
+production:
+  <<: *production_template
+  rules:
+    - if: '$CI_DEPLOY_FREEZE'
+      when: never
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$STAGING_ENABLED'
+      when: never
+    - if: '$CANARY_ENABLED'
+      when: never
+    - if: '$INCREMENTAL_ROLLOUT_ENABLED'
+      when: never
+    - if: '$INCREMENTAL_ROLLOUT_MODE'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+"
+Deploy.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Deploy.latest.gitlab-ci.yml,production,production_manual,Manual execution when certain conditions are met.,"Auto DevOps
+Kubernetes Deployment
+Helm Charts
+Environment Management",,"variables:
+  AUTO_DEPLOY_IMAGE_VERSION: 'v2.118.0'
+.auto-deploy:
+  image: ""${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cluster-integration/auto-deploy-image:${AUTO_DEPLOY_IMAGE_VERSION}""
+  dependencies: []
+
+.production: &production_template
+  extends: .auto-deploy
+  stage: production
+  script:
+    - auto-deploy check_kube_domain
+    - auto-deploy download_chart
+    - auto-deploy use_kube_context
+    - auto-deploy ensure_namespace
+    - auto-deploy initialize_tiller
+    - auto-deploy create_secret
+    - auto-deploy deploy
+    - auto-deploy delete canary
+    - auto-deploy persist_environment_url
+  environment:
+    name: production
+    url: http://$CI_PROJECT_PATH_SLUG.$KUBE_INGRESS_BASE_DOMAIN
+  artifacts:
+    paths: [environment_url.txt, tiller.log]
+    when: always
+
+production_manual:
+  <<: *production_template
+  allow_failure: false
+  rules:
+    - if: '$CI_DEPLOY_FREEZE'
+      when: never
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$INCREMENTAL_ROLLOUT_ENABLED'
+      when: never
+    - if: '$INCREMENTAL_ROLLOUT_MODE'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $STAGING_ENABLED'
+      when: manual
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CANARY_ENABLED'
+      when: manual
+"
+Deploy.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Deploy.latest.gitlab-ci.yml,incremental rollout,rollout,"Facilitate gradual deployment to production in increments (e.g., 10%, 25%, 50%, 100%).","Auto DevOps
+Kubernetes Deployment
+Helm Charts
+Incremental Rollout
+Continuous Deployment
+Pipeline Automation
+Environment Management",,"variables:
+  AUTO_DEPLOY_IMAGE_VERSION: 'v2.118.0'
+
+.auto-deploy:
+  image: ""${CI_TEMPLATE_REGISTRY_HOST}/gitlab-org/cluster-integration/auto-deploy-image:${AUTO_DEPLOY_IMAGE_VERSION}""
+  dependencies: []
+
+# This job implements incremental rollout on for every push to the default branch.
+
+.rollout: &rollout_template
+  extends: .auto-deploy
+  script:
+    - auto-deploy check_kube_domain
+    - auto-deploy download_chart
+    - auto-deploy use_kube_context
+    - auto-deploy ensure_namespace
+    - auto-deploy initialize_tiller
+    - auto-deploy create_secret
+    - auto-deploy deploy canary $ROLLOUT_PERCENTAGE
+    - auto-deploy persist_environment_url
+  environment:
+    name: production
+    url: http://$CI_PROJECT_PATH_SLUG.$KUBE_INGRESS_BASE_DOMAIN
+  artifacts:
+    paths: [environment_url.txt, tiller.log]
+    when: always
+
+.manual_rollout_template: &manual_rollout_template
+  <<: *rollout_template
+  stage: production
+  resource_group: production
+  allow_failure: true
+  rules:
+    - if: '$CI_DEPLOY_FREEZE'
+      when: never
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$INCREMENTAL_ROLLOUT_MODE == ""timed""'
+      when: never
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      when: never
+    # $INCREMENTAL_ROLLOUT_ENABLED is for compatibility with pre-GitLab 11.4 syntax
+    - if: '$INCREMENTAL_ROLLOUT_MODE == ""manual"" || $INCREMENTAL_ROLLOUT_ENABLED'
+      when: manual
+
+.timed_rollout_template: &timed_rollout_template
+  <<: *rollout_template
+  rules:
+    - if: '$CI_DEPLOY_FREEZE'
+      when: never
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$INCREMENTAL_ROLLOUT_MODE == ""manual""'
+      when: never
+    - if: '$CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      when: never
+    - if: '$INCREMENTAL_ROLLOUT_MODE == ""timed""'
+      when: delayed
+      start_in: 5 minutes
+
+timed rollout 10%:
+  <<: *timed_rollout_template
+  stage: incremental rollout 10%
+  variables:
+    ROLLOUT_PERCENTAGE: 10
+
+timed rollout 25%:
+  <<: *timed_rollout_template
+  stage: incremental rollout 25%
+  variables:
+    ROLLOUT_PERCENTAGE: 25
+
+timed rollout 50%:
+  <<: *timed_rollout_template
+  stage: incremental rollout 50%
+  variables:
+    ROLLOUT_PERCENTAGE: 50
+
+timed rollout 100%:
+  <<: *timed_rollout_template
+  <<: *production_template
+  stage: incremental rollout 100%
+  variables:
+    ROLLOUT_PERCENTAGE: 100
+
+rollout 10%:
+  <<: *manual_rollout_template
+  variables:
+    ROLLOUT_PERCENTAGE: 10
+
+rollout 25%:
+  <<: *manual_rollout_template
+  variables:
+    ROLLOUT_PERCENTAGE: 25
+
+rollout 50%:
+  <<: *manual_rollout_template
+  variables:
+    ROLLOUT_PERCENTAGE: 50
+
+rollout 100%:
+  <<: *manual_rollout_template
+  <<: *production_template
+  allow_failure: false
+"
+"Load-Performance-Testing.gitlab-ci.yml
+",https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Load-Performance-Testing.gitlab-ci.yml,performance,load_performance,"This job is to assess the application's performance under load conditions, ensuring that recent code changes do not degrade system performance. This job utilizes Docker to run a k6 container that executes a specified test script. It collects performance metrics and generates a report (load-performance.json) for analysis.","Load Performance Testing
+k6
+Performance Metrics
+Automated Testing
+Load Testing
+Performance Regression",,"load_performance:
+  stage: performance
+  image: docker:27.3
+  allow_failure: true
+  variables:
+    DOCKER_TLS_CERTDIR: """"
+    K6_IMAGE: grafana/k6
+    K6_VERSION: 0.54.0
+    K6_TEST_FILE: raw.githubusercontent.com/grafana/k6/master/examples/http_get.js
+    K6_OPTIONS: ''
+    K6_DOCKER_OPTIONS: ''
+  services:
+    - name: docker:27.3-dind
+      command: ['--tls=false', '--host=tcp://0.0.0.0:2375']
+  script:
+    - |
+      if ! docker info &>/dev/null; then
+        if [ -z ""$DOCKER_HOST"" ] && [ -n ""$KUBERNETES_PORT"" ]; then
+          export DOCKER_HOST='tcp://localhost:2375'
+        fi
+      fi
+    - docker run --rm -v ""$(pwd)"":/k6 -w /k6 $K6_DOCKER_OPTIONS $K6_IMAGE:$K6_VERSION run $K6_TEST_FILE --summary-export=load-performance.json $K6_OPTIONS
+  artifacts:
+    reports:
+      load_performance: load-performance.json
+  rules:
+    - if: '($CI_KUBERNETES_ACTIVE == null || $CI_KUBERNETES_ACTIVE == """") && ($KUBECONFIG == null || $KUBECONFIG == """")'
+      when: never
+    - if: '$LOAD_PERFORMANCE_DISABLED'
+      when: never
+    - if: '$CI_COMMIT_TAG || $CI_COMMIT_BRANCH'
+"
+SAST-IaC.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST-IaC.latest.gitlab-ci.yml,test,kics-iac-sast,"The provided GitLab CI/CD configuration defines a job named kics-iac-sast for performing Infrastructure as Code (IaC) scanning using the KICS analyzer. This job is designed to scan IaC configuration files (such as Terraform, Ansible, and Kubernetes manifests) for potential security vulnerabilities using the KICS analyzer. It runs the analyzer and generates a SAST report (gl-sast-report.json) as an artifact.","Infrastructure as Code (IaC)
+Static Application Security Testing (SAST)
+KICS Analyzer
+Security Scanning",,"# Read more about this feature here: https://docs.gitlab.com/ee/user/application_security/iac_scanning/
+#
+# Configure SAST with CI/CD variables (https://docs.gitlab.com/ee/ci/variables/index.html).
+# List of available variables: https://docs.gitlab.com/ee/user/application_security/iac_scanning/index.html
+
+variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  SAST_IMAGE_SUFFIX: """"
+
+  SAST_EXCLUDED_PATHS: ""spec, test, tests, tmp""
+
+iac-sast:
+  stage: test
+  artifacts:
+    access: 'developer'
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - when: never
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  variables:
+    SEARCH_MAX_DEPTH: 4
+  allow_failure: true
+  cache: []
+  script:
+    - /analyzer run
+
+kics-iac-sast:
+  extends: iac-sast
+  image:
+    name: ""$SAST_ANALYZER_IMAGE""
+  variables:
+    SAST_ANALYZER_IMAGE_TAG: 5
+    SAST_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/kics:$SAST_ANALYZER_IMAGE_TAG$SAST_IMAGE_SUFFIX""
+  rules:
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /kics/
+      when: never
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""  # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    - if: $CI_COMMIT_BRANCH        # If there's no open merge request, add it to a *branch* pipeline instead.
+"
+SAST.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml,test,gitlab-advanced-sast,"It performs advanced static analysis with cross-function and cross-file taint analysis. It runs the GitLab Advanced SAST analyzer to detect vulnerabilities in languages such as Python, Go, Java, JavaScript, TypeScript, C#, and Ruby.","Advanced SAST
+taint analysis
+static analysis
+security
+SAST",,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  SAST_IMAGE_SUFFIX: """"
+
+  SAST_EXCLUDED_ANALYZERS: """"
+
+sast:
+  stage: test
+  artifacts:
+    access: 'developer'
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - when: never
+  variables:
+    SEARCH_MAX_DEPTH: 4
+  cache: []
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+
+.sast-analyzer:
+  extends: sast
+  allow_failure: true
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+gitlab-advanced-sast:
+  extends: .sast-analyzer
+  image:
+    name: ""$SAST_ANALYZER_IMAGE""
+  variables:
+    SEARCH_MAX_DEPTH: 20
+    SAST_ANALYZER_IMAGE_TAG: 1
+    SAST_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/gitlab-advanced-sast:$SAST_ANALYZER_IMAGE_TAG$SAST_IMAGE_SUFFIX""
+  rules:
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /gitlab-advanced-sast/
+      when: never
+    - if: $GITLAB_ADVANCED_SAST_ENABLED != 'true' && $GITLAB_ADVANCED_SAST_ENABLED != '1'
+      when: never
+      # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/
+      exists:
+        - '**/*.py'
+        - '**/*.go'
+        - '**/*.java'
+        - '**/*.jsp'
+        - '**/*.js'
+        - '**/*.jsx'
+        - '**/*.ts'
+        - '**/*.tsx'
+        - '**/*.cjs'
+        - '**/*.mjs'
+        - '**/*.cs'
+        - '**/*.rb'
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    # If there's no open merge request, add it to a *branch* pipeline instead.
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/
+      exists:
+        - '**/*.py'
+        - '**/*.go'
+        - '**/*.java'
+        - '**/*.jsp'
+        - '**/*.js'
+        - '**/*.jsx'
+        - '**/*.ts'
+        - '**/*.tsx'
+        - '**/*.cjs'
+        - '**/*.mjs'
+        - '**/*.cs'
+        - '**/*.rb'
+"
+SAST.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml,test,gitlab-static-reachability,"It enhances vulnerability detection by analyzing the reachability of code paths. It extends the gitlab-advanced-sast job to perform static reachability analysis, generating additional reports.","Static reachability
+advanced SAST
+code analysis
+SAST",,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  SAST_IMAGE_SUFFIX: """"
+
+  SAST_EXCLUDED_ANALYZERS: """"
+
+sast:
+  stage: test
+  artifacts:
+    access: 'developer'
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - when: never
+  variables:
+    SEARCH_MAX_DEPTH: 4
+  cache: []
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+
+.sast-analyzer:
+  extends: sast
+  allow_failure: true
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+gitlab-advanced-sast:
+  extends: .sast-analyzer
+  image:
+    name: ""$SAST_ANALYZER_IMAGE""
+  variables:
+    SEARCH_MAX_DEPTH: 20
+    SAST_ANALYZER_IMAGE_TAG: 1
+    SAST_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/gitlab-advanced-sast:$SAST_ANALYZER_IMAGE_TAG$SAST_IMAGE_SUFFIX""
+  rules:
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /gitlab-advanced-sast/
+      when: never
+    - if: $GITLAB_ADVANCED_SAST_ENABLED != 'true' && $GITLAB_ADVANCED_SAST_ENABLED != '1'
+      when: never
+      # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/
+      exists:
+        - '**/*.py'
+        - '**/*.go'
+        - '**/*.java'
+        - '**/*.jsp'
+        - '**/*.js'
+        - '**/*.jsx'
+        - '**/*.ts'
+        - '**/*.tsx'
+        - '**/*.cjs'
+        - '**/*.mjs'
+        - '**/*.cs'
+        - '**/*.rb'
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    # If there's no open merge request, add it to a *branch* pipeline instead.
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/
+      exists:
+        - '**/*.py'
+        - '**/*.go'
+        - '**/*.java'
+        - '**/*.jsp'
+        - '**/*.js'
+        - '**/*.jsx'
+        - '**/*.ts'
+        - '**/*.tsx'
+        - '**/*.cjs'
+        - '**/*.mjs'
+        - '**/*.cs'
+        - '**/*.rb'
+
+.static-reachability-rules:
+  rules:
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /gitlab-advanced-sast/
+      when: never
+    - if: $GITLAB_STATIC_REACHABILITY_ENABLED != 'true'
+      when: never
+      # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/
+      exists:
+        - '**/*.py'
+        - '**/*.java'
+        - '**/*.jsp'
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    # If there's no open merge request, add it to a *branch* pipeline instead.
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/
+      exists:
+        - '**/*.py'
+        - '**/*.java'
+        - '**/*.jsp'
+
+gitlab-static-reachability:
+  extends:
+    - gitlab-advanced-sast
+  variables:
+    SAST_SCANNER_ALLOWED_CLI_OPTS: --sca-output-path ${GITLAB_ADVANCED_SAST_SCA_FILENAME}
+  before_script:
+    - |
+      echo keep-builtin-rules: false >> /lightz-aio_default_config.yaml
+  artifacts:
+    paths:
+      - $GITLAB_ADVANCED_SAST_SCA_FILENAME
+  rules:
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /gitlab-advanced-sast/
+      when: never
+    - if: $GITLAB_STATIC_REACHABILITY_ENABLED != 'true'
+      when: never
+      # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/
+      exists:
+        - '**/*.py'
+        - '**/*.java'
+        - '**/*.jsp'
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    # If there's no open merge request, add it to a *branch* pipeline instead.
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/
+      exists:
+        - '**/*.py'
+        - '**/*.java'
+        - '**/*.jsp'
+
+gitlab-enrich-cdx-results:
+  stage: .post
+  extends: .static-reachability-rules
+  variables:
+    GLAS_STATIC_REACHABILITY_MATCHER_VERSION: ""v1.0.1""
+    GLAS_REPORT: $GITLAB_ADVANCED_SAST_SCA_FILENAME
+    SCA_TO_SARIF_PROJECT_ID: 60962090
+    DEPENDENCY_SCANNING_PATTERN: ""**/gl-sbom-*.cdx.json""
+  image:
+    name: ""$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG""
+    entrypoint: [""""]
+  before_script:
+    - |
+        wget ""gitlab.com/api/v4/projects/${SCA_TO_SARIF_PROJECT_ID}/packages/generic/sca-to-sarif-matcher/${GLAS_STATIC_REACHABILITY_MATCHER_VERSION}/matcher"" \
+          --no-verbose -O /matcher
+    - chmod +x /matcher
+  script:
+    - /matcher process
+  artifacts:
+    paths:
+      - ""**/gl-sbom-*.cdx.json""
+    reports:
+      cyclonedx: ""**/gl-sbom-*.cdx.json""
+"
+SAST.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml,test,kubesec-sast,It analyzes Kubernetes manifests for security vulnerabilities. It uses the Kubesec analyzer to scan Kubernetes configuration files.,"Kubernetes 
+security
+configuration analysis
+SAST",,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  SAST_IMAGE_SUFFIX: """"
+
+  SAST_EXCLUDED_ANALYZERS: """"
+  SCAN_KUBERNETES_MANIFESTS: ""false""
+
+sast:
+  stage: test
+  artifacts:
+    access: 'developer'
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - when: never
+  variables:
+    SEARCH_MAX_DEPTH: 4
+  cache: []
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+
+.sast-analyzer:
+  extends: sast
+  allow_failure: true
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+kubesec-sast:
+  extends: .sast-analyzer
+  image:
+    name: ""$SAST_ANALYZER_IMAGE""
+  variables:
+    SAST_ANALYZER_IMAGE_TAG: 5
+    SAST_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/kubesec:$SAST_ANALYZER_IMAGE_TAG""
+  rules:
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /kubesec/
+      when: never
+    # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $SCAN_KUBERNETES_MANIFESTS == 'true'
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    # If there's no open merge request, add it to a *branch* pipeline instead.
+    - if: $CI_COMMIT_BRANCH &&
+          $SCAN_KUBERNETES_MANIFESTS == 'true'
+"
+SAST.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml,test,pmd-apex-sast,It scans Salesforce Apex code for security issues. It utilizes the PMD Apex analyzer to detect vulnerabilities in Apex classes.,"Salesforce
+Apex
+PMD
+static analysis
+SAST",,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  SAST_IMAGE_SUFFIX: """"
+
+  SAST_EXCLUDED_ANALYZERS: """"
+
+sast:
+  stage: test
+  artifacts:
+    access: 'developer'
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - when: never
+  variables:
+    SEARCH_MAX_DEPTH: 4
+  cache: []
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+
+.sast-analyzer:
+  extends: sast
+  allow_failure: true
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+pmd-apex-sast:
+  extends: .sast-analyzer
+  image:
+    name: ""$SAST_ANALYZER_IMAGE""
+  variables:
+    SAST_ANALYZER_IMAGE_TAG: 5
+    SAST_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/pmd-apex:$SAST_ANALYZER_IMAGE_TAG""
+  rules:
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /pmd-apex/
+      when: never
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""  # Add the job to merge request pipelines if there's an open merge request.
+      exists:
+        - '**/*.cls'
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    - if: $CI_COMMIT_BRANCH        # If there's no open merge request, add it to a *branch* pipeline instead.
+      exists:
+        - '**/*.cls'"
+SAST.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml,test,semgrep-sast,It performs static analysis using Semgrep across multiple languages. It runs the Semgrep analyzer to scan code for security vulnerabilities.,"Semgrep
+static analysis
+multi-language
+security
+SAST",,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  SAST_IMAGE_SUFFIX: """"
+
+  SAST_EXCLUDED_ANALYZERS: """"
+  DEFAULT_SAST_EXCLUDED_PATHS: ""spec, test, tests, tmp""
+  SAST_EXCLUDED_PATHS: ""$DEFAULT_SAST_EXCLUDED_PATHS""
+
+sast:
+  stage: test
+  artifacts:
+    access: 'developer'
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - when: never
+  variables:
+    SEARCH_MAX_DEPTH: 4
+  cache: []
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+
+.sast-analyzer:
+  extends: sast
+  allow_failure: true
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+semgrep-sast:
+  extends: .sast-analyzer
+  image:
+    name: ""$SAST_ANALYZER_IMAGE""
+  variables:
+    SEARCH_MAX_DEPTH: 20
+    SAST_ANALYZER_IMAGE_TAG: 5
+    SAST_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/semgrep:$SAST_ANALYZER_IMAGE_TAG$SAST_IMAGE_SUFFIX""
+  rules:
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /semgrep/
+      when: never
+    # Add the job to merge request pipelines if there's an open merge request.
+    ## In case gitlab-advanced-sast also runs, exclude files already scanned by gitlab-advanced-sast
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/ &&
+          $SAST_EXCLUDED_ANALYZERS !~ /gitlab-advanced-sast/ &&
+          ($GITLAB_ADVANCED_SAST_ENABLED == 'true' || $GITLAB_ADVANCED_SAST_ENABLED == '1')
+      variables:
+        SAST_EXCLUDED_PATHS: ""$DEFAULT_SAST_EXCLUDED_PATHS, **/*.py, **/*.go, **/*.java, **/*.js, **/*.jsx, **/*.ts, **/*.tsx, **/*.cjs, **/*.mjs, **/*.cs, **/*.rb""
+      exists:
+        - '**/*.c'
+        - '**/*.cc'
+        - '**/*.cpp'
+        - '**/*.c++'
+        - '**/*.cp'
+        - '**/*.cxx'
+        - '**/*.h'
+        - '**/*.hpp'
+        - '**/*.scala'
+        - '**/*.sc'
+        - '**/*.php'
+        - '**/*.swift'
+        - '**/*.m'
+        - '**/*.kt'
+    ## In case gitlab-advanced-sast already covers all the files that semgrep-sast would have scanned
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/ &&
+          $SAST_EXCLUDED_ANALYZERS !~ /gitlab-advanced-sast/ &&
+          ($GITLAB_ADVANCED_SAST_ENABLED == 'true' || $GITLAB_ADVANCED_SAST_ENABLED == '1')
+      when: never
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""
+      exists:
+        - '**/*.py'
+        - '**/*.js'
+        - '**/*.jsx'
+        - '**/*.ts'
+        - '**/*.tsx'
+        - '**/*.cjs'
+        - '**/*.mjs'
+        - '**/*.c'
+        - '**/*.cc'
+        - '**/*.cpp'
+        - '**/*.c++'
+        - '**/*.cp'
+        - '**/*.cxx'
+        - '**/*.h'
+        - '**/*.hpp'
+        - '**/*.go'
+        - '**/*.java'
+        - '**/*.cs'
+        - '**/*.scala'
+        - '**/*.sc'
+        - '**/*.php'
+        - '**/*.swift'
+        - '**/*.m'
+        - '**/*.rb'
+        - '**/*.kt'
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    # If there's no open merge request, add it to a *branch* pipeline instead.
+    ## In case gitlab-advanced-sast also runs, exclude files already scanned by gitlab-advanced-sast
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/ &&
+          $SAST_EXCLUDED_ANALYZERS !~ /gitlab-advanced-sast/ &&
+          ($GITLAB_ADVANCED_SAST_ENABLED == 'true' || $GITLAB_ADVANCED_SAST_ENABLED == '1')
+      variables:
+        SAST_EXCLUDED_PATHS: ""$DEFAULT_SAST_EXCLUDED_PATHS, **/*.py, **/*.go, **/*.java, **/*.js, **/*.jsx, **/*.ts, **/*.tsx, **/*.cjs, **/*.mjs, **/*.cs, **/*.rb""
+      exists:
+        - '**/*.c'
+        - '**/*.cc'
+        - '**/*.cpp'
+        - '**/*.c++'
+        - '**/*.cp'
+        - '**/*.cxx'
+        - '**/*.h'
+        - '**/*.hpp'
+        - '**/*.scala'
+        - '**/*.sc'
+        - '**/*.php'
+        - '**/*.swift'
+        - '**/*.m'
+        - '**/*.kt'
+    ## In case gitlab-advanced-sast already covers all the files that semgrep-sast would have scanned
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bsast_advanced\b/ &&
+          $SAST_EXCLUDED_ANALYZERS !~ /gitlab-advanced-sast/ &&
+          ($GITLAB_ADVANCED_SAST_ENABLED == 'true' || $GITLAB_ADVANCED_SAST_ENABLED == '1')
+      when: never
+    - if: $CI_COMMIT_BRANCH
+      exists:
+        - '**/*.py'
+        - '**/*.js'
+        - '**/*.jsx'
+        - '**/*.ts'
+        - '**/*.tsx'
+        - '**/*.cjs'
+        - '**/*.mjs'
+        - '**/*.c'
+        - '**/*.cc'
+        - '**/*.cpp'
+        - '**/*.c++'
+        - '**/*.cp'
+        - '**/*.cxx'
+        - '**/*.h'
+        - '**/*.hpp'
+        - '**/*.go'
+        - '**/*.java'
+        - '**/*.cs'
+        - '**/*.scala'
+        - '**/*.sc'
+        - '**/*.php'
+        - '**/*.swift'
+        - '**/*.m'
+        - '**/*.rb'
+        - '**/*.kt'
+"
+SAST.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml,test,sobelow-sast,It scans Elixir applications for security issues. It runs the Sobelow analyzer on Elixir projects.,"Elixir
+Phoenix
+Sobelow
+security scanning
+static analysis
+SAST",,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  SAST_IMAGE_SUFFIX: """"
+
+  SAST_EXCLUDED_ANALYZERS: """"
+
+sast:
+  stage: test
+  artifacts:
+    access: 'developer'
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - when: never
+  variables:
+    SEARCH_MAX_DEPTH: 4
+  cache: []
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+
+.sast-analyzer:
+  extends: sast
+  allow_failure: true
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+sobelow-sast:
+  extends: .sast-analyzer
+  image:
+    name: ""$SAST_ANALYZER_IMAGE""
+  variables:
+    SAST_ANALYZER_IMAGE_TAG: 5
+    SAST_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/sobelow:$SAST_ANALYZER_IMAGE_TAG""
+  rules:
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /sobelow/
+      when: never
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""  # Add the job to merge request pipelines if there's an open merge request.
+      exists:
+        - '**/mix.exs'
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    - if: $CI_COMMIT_BRANCH        # If there's no open merge request, add it to a *branch* pipeline instead.
+      exists:
+        - '**/mix.exs'"
+SAST.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml,test,spotbugs-sast,The spotbugs-sast job is designed to perform static analysis on Groovy codebases using the SpotBugs analyzer. It scans compiled bytecode to identify potential security vulnerabilities. It detects security vulnerabilities in Groovy applications by analyzing compiled bytecode.,"SpotBugs
+SAST
+Groovy
+Static Analysis
+Security Testing",,"variables:
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  SAST_IMAGE_SUFFIX: """"
+
+  SAST_EXCLUDED_ANALYZERS: """"
+
+sast:
+  stage: test
+  artifacts:
+    access: 'developer'
+    reports:
+      sast: gl-sast-report.json
+  rules:
+    - when: never
+  variables:
+    SEARCH_MAX_DEPTH: 4
+  cache: []
+  script:
+    - echo ""$CI_JOB_NAME is used for configuration only, and its script should not be executed""
+    - exit 1
+
+.sast-analyzer:
+  extends: sast
+  allow_failure: true
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  script:
+    - /analyzer run
+
+spotbugs-sast:
+  extends: .sast-analyzer
+  image:
+    name: ""$SAST_ANALYZER_IMAGE""
+  variables:
+    SAST_ANALYZER_IMAGE_TAG: 5
+    SAST_ANALYZER_IMAGE: ""$SECURE_ANALYZERS_PREFIX/spotbugs:$SAST_ANALYZER_IMAGE_TAG""
+  rules:
+    - if: $SAST_EXCLUDED_ANALYZERS =~ /spotbugs/
+      when: never
+    - if: $SAST_EXPERIMENTAL_FEATURES == 'true'
+      exists:
+        - '**/AndroidManifest.xml'
+      when: never
+    - if: $SAST_DISABLED == 'true' || $SAST_DISABLED == '1'
+      when: never
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""  # Add the job to merge request pipelines if there's an open merge request.
+      exists:
+        - '**/*.groovy'
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    - if: $CI_COMMIT_BRANCH        # If there's no open merge request, add it to a *branch* pipeline instead.
+      exists:
+        - '**/*.groovy'"
+Secret-Detection.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Secret-Detection.latest.gitlab-ci.yml,test,secret_detection,"The provided GitLab CI configuration defines jobs for Secret Detection, aiming to identify and prevent the exposure of sensitive information within the codebase.","Secret Detection
+Sensitive Information
+Security Analysis",,"# Read more about this feature here: https://docs.gitlab.com/ee/user/application_security/secret_detection
+#
+# Configure the scanning tool through the environment variables.
+# List of the variables: https://docs.gitlab.com/ee/user/application_security/secret_detection/#available-variables
+# How to set: https://docs.gitlab.com/ee/ci/yaml/#variables
+
+variables:
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  SECRET_DETECTION_IMAGE_SUFFIX: """"
+
+  SECRETS_ANALYZER_VERSION: ""6""
+  SECRET_DETECTION_EXCLUDED_PATHS: """"
+
+.secret-analyzer:
+  stage: test
+  image: ""$SECURE_ANALYZERS_PREFIX/secrets:$SECRETS_ANALYZER_VERSION$SECRET_DETECTION_IMAGE_SUFFIX""
+  services: []
+  allow_failure: true
+  variables:
+    GIT_DEPTH: ""50""
+  # `rules` must be overridden explicitly by each child job
+  # see https://gitlab.com/gitlab-org/gitlab/-/issues/218444
+  artifacts:
+    access: 'developer'
+    reports:
+      secret_detection: gl-secret-detection-report.json
+
+secret_detection:
+  extends: .secret-analyzer
+  rules:
+    - if: $SECRET_DETECTION_DISABLED == 'true' || $SECRET_DETECTION_DISABLED == '1'
+      when: never
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""  # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_OPEN_MERGE_REQUESTS  # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+      when: never
+    - if: $CI_COMMIT_BRANCH        # If there's no open merge request, add it to a *branch* pipeline instead.
+  script:
+    - /analyzer run
+"
+API-Discovery.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/API-Discovery.gitlab-ci.yml,test,.api_discovery_java_spring_boot,The .api_discovery_java_spring_boot job in the provided GitLab CI configuration is designed to perform API Discovery on Java Spring Boot applications. It analyzes a Java Spring Boot application and generate an OpenAPI document (gl-api-discovery-openapi.json) that describes the web APIs exposed by the application.,"API Discovery
+Java Spring Boot
+OpenAPI Specification
+Static Application Security Testing (SAST)
+API Security
+Automated API Documentation",Java,"# To contribute improvements to CI/CD templates, please follow the Development guide at:
+# https://docs.gitlab.com/ee/development/cicd/templates.html
+# This specific template is located at:
+# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/API-Discovery.gitlab-ci.yml
+
+# Read more about this feature here: https://docs.gitlab.com/ee/user/application_security/api_discovery/
+#
+# Configure API Discovery with CI/CD variables (https://docs.gitlab.com/ee/ci/variables/index.html).
+# List of available variables: https://docs.gitlab.com/ee/user/application_security/api_discovery/#available-cicd-variables
+
+variables:
+  API_DISCOVERY_PACKAGES: ""$CI_API_V4_URL/projects/42503323/packages""
+  API_DISCOVERY_VERSION: ""1""
+
+.api_discovery_java_spring_boot:
+  stage: test
+  allow_failure: true
+  script:
+    #
+    # Check configuration
+    - if [[ -z ""$API_DISCOVERY_VERSION"" ]]; then echo ""Error, API_DISCOVERY_VERSION not provided. Please set this variable and re-run the pipeline.""; exit 1; fi
+    #
+    # Check for required commands
+    - requires() { command -v ""$1"" >/dev/null 2>&1 || { echo ""'$1' is required but it's not installed. Add the needed command to the job image and retry."" >&2; exit 1; } }
+    - requires 'curl'
+    - requires 'java'
+    #
+    # Set JAVA_HOME if API_DISCOVERY_JAVA_HOME provided
+    - if [[ -n ""$API_DISCOVERY_JAVA_HOME"" ]]; then export JAVA_HOME=""$API_DISCOVERY_JAVA_HOME""; export PATH=""$JAVA_HOME/bin:$PATH""; fi
+    #
+    # Download jar file
+    - if [[ -n ""$API_DISCOVERY_PACKAGE_TOKEN"" ]]; then echo ""Using API_DISCOVERY_PACKAGE_TOKEN""; export CURL_AUTH=""-H PRIVATE-TOKEN:$API_DISCOVERY_PACKAGE_TOKEN""; else export CURL_AUTH=""""; fi
+    - DL_URL=""$API_DISCOVERY_PACKAGES/maven/com/gitlab/analyzers/api-discovery/api-discovery_spring-boot/$API_DISCOVERY_VERSION/api-discovery_spring-boot-$API_DISCOVERY_VERSION.jar""
+    - echo ""Downloading Discovery jar from '${DL_URL}'""
+    - CURL_CMD=""curl -L ${CURL_AUTH} --write-out ""%{http_code}"" --output api_discovery_java_spring_boot_${API_DISCOVERY_VERSION}.jar ${DL_URL}""
+    - STATUS_CODE=$(${CURL_CMD})
+    - RC=$?
+    - if [[ $RC -ne 0 ]]; then echo ""Error connecting to GitLab API, curl exit code was $RC.""; echo ""To diagnose, see the curl documentation- https://everything.curl.dev/usingcurl/returns""; exit 1; fi
+    - if [[ ""$STATUS_CODE"" != ""200"" ]]; then echo ""Error, Unable to download api_discovery_java_spring_boot_${API_DISCOVERY_VERSION}.jar""; echo ""Error, Status Code was $STATUS_CODE, but wanted 200""; exit 1; fi
+    #
+    # Run API Discovery
+    - java -jar ""api_discovery_java_spring_boot_${API_DISCOVERY_VERSION}.jar""
+    #
+    # Check for expected output file
+    - if [[ ! -e ""gl-api-discovery-openapi.json"" ]]; then echo ""Error, Unable to find gl-api-discovery-openapi.json""; exit 1; fi
+    #
+  artifacts:
+    access: 'developer'
+    when: always
+    paths:
+      - gl-api-discovery-openapi.json
+      - gl-*.log
+  rules:
+    - if: $API_DISCOVERY_DISABLED
+      when: never
+    - if: $API_DISCOVERY_DISABLED_FOR_DEFAULT_BRANCH &&
+          $CI_DEFAULT_BRANCH == $CI_COMMIT_REF_NAME
+      when: never
+    # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""
+
+    # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+    - if: $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+    # Add the job to branch pipelines.
+    - if: $CI_COMMIT_BRANCH
+"
+API-Fuzzing.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/API-Fuzzing.latest.gitlab-ci.yml,fuzz,apifuzzer_fuzz,"The provided GitLab CI configuration includes a job named apifuzzer_fuzz. It performs Web API fuzz testing by sending unexpected input parameters to a web API, aiming to identify unexpected behaviors and potential security vulnerabilities. It utilizes the Docker image specified by the FUZZAPI_IMAGE variable, defaulting to api-security.
+Then it executes the fuzzing process using the /peach/analyzer-fuzz-api script. At the end it generates artifacts, including: gl-assets, gl-api-fuzzing-report.json, Log files matching the pattern gl-*.log","API Fuzz Testing
+Security Testing
+Web API
+Vulnerability Detection
+Fuzzing
+API Security",,"# To contribute improvements to CI/CD templates, please follow the Development guide at:
+# https://docs.gitlab.com/ee/development/cicd/templates.html
+# This specific template is located at:
+# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/API-Fuzzing.latest.gitlab-ci.yml
+
+# To use this template, add the following to your .gitlab-ci.yml file:
+#
+# include:
+#   template: API-Fuzzing.latest.gitlab-ci.yml
+#
+# You also need to add a `fuzz` stage to your `stages:` configuration. A sample configuration for API Fuzzing:
+#
+# stages:
+#   - build
+#   - test
+#   - deploy
+#   - fuzz
+
+# Read more about this feature here: https://docs.gitlab.com/ee/user/application_security/api_fuzzing/
+#
+# Configure API Fuzzing with CI/CD variables (https://docs.gitlab.com/ee/ci/variables/index.html).
+# List of available variables: https://docs.gitlab.com/ee/user/application_security/api_fuzzing/#available-cicd-variables
+
+variables:
+    # Setting this variable affects all Security templates
+    # (SAST, Dependency Scanning, ...)
+    SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+    #
+    FUZZAPI_VERSION: ""5""
+    FUZZAPI_IMAGE_SUFFIX: """"
+    FUZZAPI_IMAGE: api-security
+
+apifuzzer_fuzz:
+    stage: fuzz
+    image: $SECURE_ANALYZERS_PREFIX/$FUZZAPI_IMAGE:$FUZZAPI_VERSION$FUZZAPI_IMAGE_SUFFIX
+    allow_failure: true
+    rules:
+        - if: $API_FUZZING_DISABLED == 'true' || $API_FUZZING_DISABLED == '1'
+          when: never
+        - if: $API_FUZZING_DISABLED_FOR_DEFAULT_BRANCH == 'true'  &&
+                $CI_DEFAULT_BRANCH == $CI_COMMIT_REF_NAME
+          when: never
+        - if: $API_FUZZING_DISABLED_FOR_DEFAULT_BRANCH == '1'  &&
+                $CI_DEFAULT_BRANCH == $CI_COMMIT_REF_NAME
+          when: never
+
+        # Add the job to merge request pipelines if there's an open merge request.
+        - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+              $CI_GITLAB_FIPS_MODE == ""true""
+          variables:
+              DAST_API_IMAGE_SUFFIX: ""-fips""
+        - if: $CI_PIPELINE_SOURCE == ""merge_request_event""
+
+        # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+        - if: $CI_OPEN_MERGE_REQUESTS
+          when: never
+
+        # Add the job to branch pipelines.
+        - if: $CI_COMMIT_BRANCH &&
+              $CI_GITLAB_FIPS_MODE == ""true""
+          variables:
+              FUZZAPI_IMAGE_SUFFIX: ""-fips""
+        - if: $CI_COMMIT_BRANCH
+    script:
+        - /peach/analyzer-fuzz-api
+    artifacts:
+        access: 'developer'
+        when: always
+        paths:
+            - gl-assets
+            - gl-api-fuzzing-report.json
+            - gl-*.log
+        reports:
+            api_fuzzing: gl-api-fuzzing-report.json
+"
+API-Security.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/API-Security.latest.gitlab-ci.yml,dast,api_security,"This job conducts automated penetration tests on web APIs to identify vulnerabilities such as cross-site scripting (XSS), SQL injection (SQLi), and cross-site request forgery (CSRF). This ensures that APIs are secure before deployment.","DAST
+API Security Testing
+Automated Penetration Testing
+Vulnerability Scanning
+OpenAPI Specification
+Security Analyzer
+API Vulnerabilities",,"# To contribute improvements to CI/CD templates, please follow the Development guide at:
+# https://docs.gitlab.com/ee/development/cicd/templates.html
+# This specific template is located at:
+# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/Dast-API.latest.gitlab-ci.yml
+
+# To use this template, add the following to your .gitlab-ci.yml file:
+#
+# include:
+#   template: API-Security.latest.gitlab-ci.yml
+#
+# You also need to add a `dast` stage to your `stages:` configuration. A sample configuration for DAST API:
+#
+# stages:
+#   - build
+#   - test
+#   - deploy
+#   - dast
+
+# Read more about this feature here: https://docs.gitlab.com/ee/user/application_security/dast_api/index.html
+
+# Configure API Security scanning with CI/CD variables (https://docs.gitlab.com/ee/ci/variables/index.html).
+# List of available variables: https://docs.gitlab.com/ee/user/application_security/dast_api/index.html#available-cicd-variables
+
+variables:
+  # Setting this variable affects all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  #
+  APISEC_VERSION: ""5""
+  APISEC_IMAGE_SUFFIX: """"
+  APISEC_IMAGE: api-security
+
+api_security:
+  stage: dast
+  image: $SECURE_ANALYZERS_PREFIX/$APISEC_IMAGE:$APISEC_VERSION$APISEC_IMAGE_SUFFIX
+  allow_failure: true
+  rules:
+    - if: $APISEC_DISABLED == 'true' || $APISEC_DISABLED == '1'
+      when: never
+    - if: $APISEC_DISABLED_FOR_DEFAULT_BRANCH == 'true' &&
+          $CI_DEFAULT_BRANCH == $CI_COMMIT_REF_NAME
+      when: never
+    - if: $APISEC_DISABLED_FOR_DEFAULT_BRANCH == '1' &&
+          $CI_DEFAULT_BRANCH == $CI_COMMIT_REF_NAME
+      when: never
+
+    # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      variables:
+        APISEC_IMAGE_SUFFIX: ""-fips""
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""
+
+    # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+    - if: $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+    # Add the job to branch pipelines.
+    - if: $CI_COMMIT_BRANCH &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      variables:
+        APISEC_IMAGE_SUFFIX: ""-fips""
+    - if: $CI_COMMIT_BRANCH
+  script:
+    - /peach/analyzer-api-security
+  artifacts:
+    when: always
+    paths:
+      - gl-assets
+      - gl-api-security-report.json
+      - gl-*.log
+    reports:
+      dast: gl-api-security-report.json
+
+# end
+"
+DAST-API.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/DAST-API.latest.gitlab-ci.yml,dast,dast_api,"The dast_api job is designed to run automated penetration tests to identify vulnerabilities in web APIs during their runtime. This process helps uncover security issues such as cross-site scripting (XSS), SQL injection (SQLi), and cross-site request forgery (CSRF) that other quality assurance processes might miss.","DAST
+API Security Testing
+Dynamic Application Security Testing
+API Vulnerability Scanning
+Automated Penetration Testing",,"# To contribute improvements to CI/CD templates, please follow the Development guide at:
+# https://docs.gitlab.com/ee/development/cicd/templates.html
+# This specific template is located at:
+# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/Dast-API.latest.gitlab-ci.yml
+
+# To use this template, add the following to your .gitlab-ci.yml file:
+#
+# include:
+#   template: DAST-API.latest.gitlab-ci.yml
+#
+# You also need to add a `dast` stage to your `stages:` configuration. A sample configuration for DAST API:
+#
+# stages:
+#   - build
+#   - test
+#   - deploy
+#   - dast
+
+# Read more about this feature here: https://docs.gitlab.com/ee/user/application_security/dast_api/index.html
+
+# Configure DAST API scanning with CI/CD variables (https://docs.gitlab.com/ee/ci/variables/index.html).
+# List of available variables: https://docs.gitlab.com/ee/user/application_security/dast_api/index.html#available-cicd-variables
+
+variables:
+  # Setting this variable affects all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  #
+  DAST_API_VERSION: ""5""
+  DAST_API_IMAGE_SUFFIX: """"
+  DAST_API_IMAGE: api-security
+
+dast_api:
+  stage: dast
+  image: $SECURE_ANALYZERS_PREFIX/$DAST_API_IMAGE:$DAST_API_VERSION$DAST_API_IMAGE_SUFFIX
+  allow_failure: true
+  rules:
+    - if: $DAST_API_DISABLED == 'true' || $DAST_API_DISABLED == '1'
+      when: never
+    - if: $DAST_API_DISABLED_FOR_DEFAULT_BRANCH == 'true' &&
+          $CI_DEFAULT_BRANCH == $CI_COMMIT_REF_NAME
+      when: never
+    - if: $DAST_API_DISABLED_FOR_DEFAULT_BRANCH == '1' &&
+          $CI_DEFAULT_BRANCH == $CI_COMMIT_REF_NAME
+      when: never
+
+    # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      variables:
+        DAST_API_IMAGE_SUFFIX: ""-fips""
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event""
+
+    # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+    - if: $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+    # Add the job to branch pipelines.
+    - if: $CI_COMMIT_BRANCH &&
+          $CI_GITLAB_FIPS_MODE == ""true""
+      variables:
+        DAST_API_IMAGE_SUFFIX: ""-fips""
+    - if: $CI_COMMIT_BRANCH
+  script:
+    - /peach/analyzer-dast-api
+  artifacts:
+    access: 'developer'
+    when: always
+    paths:
+      - gl-assets
+      - gl-dast-api-report.json
+      - gl-*.log
+    reports:
+      dast: gl-dast-api-report.json
+
+# end
+"
+DAST.latest.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/DAST.latest.gitlab-ci.yml,dast,dast,"The dast job is designed to automatically scan your web application for security vulnerabilities, such as cross-site scripting (XSS), SQL injection (SQLi), and cross-site request forgery (CSRF). By integrating DAST into your CI/CD pipeline, you can identify and address security issues during the development lifecycle, enhancing the overall security posture of your application.","Dynamic Application Security Testing
+DAST
+Security Scan
+Vulnerability Assessment",,"# To contribute improvements to CI/CD templates, please follow the Development guide at:
+# https://docs.gitlab.com/ee/development/cicd/templates.html
+# This specific template is located at:
+# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/DAST.latest.gitlab-ci.yml
+
+# To use this template, add the following to your .gitlab-ci.yml file:
+#
+# include:
+#   template: DAST.latest.gitlab-ci.yml
+#
+# You also need to add a `dast` stage to your `stages:` configuration. A sample configuration for DAST:
+#
+# stages:
+#   - build
+#   - test
+#   - deploy
+#   - dast
+#
+# Read more about this feature here: https://docs.gitlab.com/ee/user/application_security/dast/
+#
+# Configure DAST with CI/CD variables (https://docs.gitlab.com/ee/ci/variables/index.html).
+# List of available variables: https://docs.gitlab.com/ee/user/application_security/dast/#available-variables
+
+variables:
+  DAST_VERSION: 5
+  # Setting this variable will affect all Security templates
+  # (SAST, Dependency Scanning, ...)
+  SECURE_ANALYZERS_PREFIX: ""$CI_TEMPLATE_REGISTRY_HOST/security-products""
+  DAST_IMAGE_SUFFIX: """"
+
+dast:
+  stage: dast
+  image:
+    name: ""$SECURE_ANALYZERS_PREFIX/dast:$DAST_VERSION$DAST_IMAGE_SUFFIX""
+  variables:
+    GIT_STRATEGY: none
+  allow_failure: true
+  script:
+    - if [[ -f ""environment_url.txt"" ]]; then DAST_WEBSITE=""${DAST_WEBSITE:-$(cat environment_url.txt)}""; export DAST_WEBSITE; fi
+    - /analyze
+  artifacts:
+    access: 'developer'
+    when: always
+    reports:
+      dast: gl-dast-report.json
+    paths:
+      - gl-dast-*.*
+  rules:
+    - if: $DAST_DISABLED == 'true' || $DAST_DISABLED == '1'
+      when: never
+    - if: $DAST_DISABLED_FOR_DEFAULT_BRANCH == 'true' &&
+          $CI_DEFAULT_BRANCH == $CI_COMMIT_REF_NAME
+      when: never
+    - if: $DAST_DISABLED_FOR_DEFAULT_BRANCH == '1' &&
+          $CI_DEFAULT_BRANCH == $CI_COMMIT_REF_NAME
+      when: never
+    - if: $CI_DEFAULT_BRANCH != $CI_COMMIT_REF_NAME &&
+          $REVIEW_DISABLED == 'true'
+      when: never
+    - if: $CI_DEFAULT_BRANCH != $CI_COMMIT_REF_NAME &&
+          $REVIEW_DISABLED == '1'
+      when: never
+
+    # Add the job to merge request pipelines if there's an open merge request. (FIPS)
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $CI_GITLAB_FIPS_MODE == ""true"" &&
+          $GITLAB_FEATURES =~ /\bdast\b/
+      variables:
+        DAST_IMAGE_SUFFIX: ""-fips""
+    # Add the job to merge request pipelines if there's an open merge request.
+    - if: $CI_PIPELINE_SOURCE == ""merge_request_event"" &&
+          $GITLAB_FEATURES =~ /\bdast\b/
+
+    # Don't add it to a *branch* pipeline if it's already in a merge request pipeline.
+    - if: $CI_OPEN_MERGE_REQUESTS
+      when: never
+
+    # Add the job to branch pipelines. (FIPS)
+    - if: $CI_COMMIT_BRANCH &&
+          $CI_GITLAB_FIPS_MODE == ""true"" &&
+          $GITLAB_FEATURES =~ /\bdast\b/
+      variables:
+        DAST_IMAGE_SUFFIX: ""-fips""
+    # Add the job to branch pipelines.
+    - if: $CI_COMMIT_BRANCH &&
+          $GITLAB_FEATURES =~ /\bdast\b/
+  after_script:
+    # For DAST 4 compatibility, remove any debug.log files because they might contain secrets.
+    - rm -f /zap/wrk/**/debug.log
+    - cp -r /zap/wrk dast_artifacts
+"
+Fortify-FoD-sast.gitlab-ci.yml,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/Fortify-FoD-sast.gitlab-ci.yml,,fortify_fod_sast,The provided GitLab CI/CD configuration integrates Fortify on Demand (FoD) Static Application Security Testing (SAST) into the CI/CD pipeline. The job performs static application security testing using Fortify on Demand within the CI/CD pipeline.,"Fortify on Demand
+SAST
+Static Application Security Testing
+ScanCentral
+FoDUpload
+Application Security",,"# This template is provided and maintained by Fortify, an official Technology Partner with GitLab.
+# You can copy and paste this template into a new `.gitlab-ci.yml` file.
+# You should not add this template to an existing `.gitlab-ci.yml` file by using the `include:` keyword.
+
+################################################################################################################################################
+# Fortify lets you build secure software fast with an appsec platform that automates testing throughout the DevSecOps pipeline. Fortify static,#
+# dynamic, interactive, and runtime security testing is available on premises or as a service. To learn more about Fortify, start a free trial #
+# or contact our sales team, visit microfocus.com/appsecurity.                                                                                 #
+#                                                                                                                                              #
+# Use this pipeline template as a basis for integrating Fortify on Demand Static Application Security Testing(SAST) into your GitLab pipelines.#
+# This template demonstrates the steps to prepare the code+dependencies and initiate a scan. As an option, it also supports waiting for the    #
+# SAST scan to complete and optinally failing the job. Software Composition Analysis can be also be performed in conjunection with the SAST    #
+# scan if that service has been purchased. Users should review inputs and environment variables below to configure scanning for an existing    #
+# application in your Fortify on Demand tenant. Additional information is available in the comments throughout the template and the Fortify on #
+# Demand, FoD Uploader and ScanCentral Client product documentation. If you need additional assistance with configuration, feel free to create #
+# a help ticket in the Fortify on Demand portal.                                                                                               #
+################################################################################################################################################
+
+fortify_fod_sast:
+  image: fortifydocker/fortify-ci-tools:3-jdk-8
+  variables:
+    # Update/override PACKAGE_OPTS based on the ScanCentral Client documentation for your project's included tech stack(s). Helpful hints:
+    #   ScanCentral Client will download dependencies for maven (-bt mvn) and gradle (-bt gradle).
+    #   The current fortify-ci-tools image is Linux only at this time. Msbuild integration is not currently supported.
+    #   ScanCentral has additional options that should be set for PHP and Python projects.
+    #   For other build tools (-bt none), add your build commands to download necessary dependencies and prepare according to Fortify on Demand Packaging documentation.
+    #   ScanCentral Client documentation is located at https://www.microfocus.com/documentation/fortify-software-security-center/
+    PACKAGE_OPTS: ""-bt mvn""
+
+    # Update/override the FoDUploader environment variables as needed. For more information on FoDUploader commands, see https://github.com/fod-dev/fod-uploader-java. Helpful hints:
+    #   Credentials (FOD_USERNAME, FOD_PAT, FOD_TENANT) are expected as GitLab CICD Variables in the template (masking recommended).
+    #   Static scan settings should be configured in Fortify on Demand portal (Automated Audit preference strongly recommended).
+    #   FOD_RELEASE_ID is expected as a GitLab CICD Variable.
+    #   FOD_UPLOADER_OPTS can be adjusted to wait for scan completion/pull results (-I 1) and control whether to fail the job (-apf).
+    FOD_URL: ""https://ams.fortify.com""
+    FOD_API_URL: ""https://api.ams.fortify.com/""
+    FOD_UPLOADER_OPTS: ""-ep 2 -pp 0""
+    FOD_NOTES: ""Triggered by Gitlab Pipeline IID $CI_PIPELINE_IID: $CI_PIPELINE_URL""
+
+  script:
+    # Package source code and dependencies using Fortify ScanCentral client
+    - 'scancentral package $PACKAGE_OPTS -o package.zip'
+    # Start Fortify on Demand SAST scan
+    - 'FoDUpload -z package.zip -aurl $FOD_API_URL -purl $FOD_URL -rid ""$FOD_RELEASE"" -tc ""$FOD_TENANT"" -uc ""$FOD_USERNAME"" ""$FOD_PAT"" $FOD_UPLOADER_OPTS -I 1 -n ""$FOD_NOTES""'
+    # Generate GitLab reports
+    - 'FortifyVulnerabilityExporter FoDToGitLabSAST --fod.baseUrl=$FOD_URL --fod.tenant=""$FOD_TENANT"" --fod.userName=""$FOD_USERNAME"" --fod.password=""$FOD_PAT"" --fod.release.id=$FOD_RELEASE'
+  # Change to false to fail the entire pipeline if the scan fails and/or the result of a scan causes security policy failure (see ""-apf"" option in FoDUploader documentation)
+  allow_failure: true
+  # Report SAST vulnerabilities back to GitLab
+  artifacts:
+    access: 'developer'
+    reports:
+      sast: gl-fortify-sast.json
+"
+"Cosign.gitlab-ci.yml
+",https://gitlab.com/components/package/-/blob/main/templates/signing/signing.gitlab-ci.yml,build,build_and_sign,"This GitLab CI/CD configuration defines a pipeline that builds, signs, and verifies a Docker image using Cosign for supply chain security. It ensures that the generated container images are cryptographically signed and verified, enhancing integrity and trustworthiness.","Docker Build & Push
+Container Image Security
+Cosign Signing & Verification",,"stages:
+  - build
+  - release
+
+build_and_sign:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    IMAGE_TAG: $CI_COMMIT_REF_NAME
+    IMAGE_URI: $CI_REGISTRY_IMAGE:$IMAGE_TAG
+    COSIGN_YES: ""true""
+  id_tokens:
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+  before_script:
+    - apk add --no-cache cosign jq
+    - docker login -u ""gitlab-ci-token"" -p ""$CI_JOB_TOKEN"" ""$CI_REGISTRY""
+  script:
+    - >-
+      if [ -n ""$DOCKERFILE_PATH"" ]; then
+      docker build --pull -t ""$IMAGE_URI""
+      -f ""$DOCKERFILE_PATH/Dockerfile"" ""$DOCKERFILE_PATH"";
+      else
+      docker build --pull -t ""$IMAGE_URI"" .;
+      fi;
+    - docker push ""$IMAGE_URI""
+    - >-
+      IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}'
+      ""$IMAGE_URI"")
+    - echo ""Image digest - $IMAGE_DIGEST""
+    - >-
+      cosign sign ""$IMAGE_DIGEST""
+      --annotations ""com.gitlab.ci.user.name=$GITLAB_USER_NAME""
+      --annotations ""com.gitlab.ci.pipeline.id=$CI_PIPELINE_ID""
+      --annotations ""com.gitlab.ci.pipeline.url=$CI_PIPELINE_URL""
+      --annotations ""com.gitlab.ci.job.id=$CI_JOB_ID""
+      --annotations ""com.gitlab.ci.job.url=$CI_JOB_URL""
+      --annotations ""com.gitlab.ci.commit.sha=$CI_COMMIT_SHA""
+      --annotations ""com.gitlab.ci.commit.ref.name=$CI_COMMIT_REF_NAME""
+      --annotations ""com.gitlab.ci.project.path=$CI_PROJECT_PATH""
+      --annotations ""org.opencontainers.image.source=$CI_PROJECT_URL""
+      --annotations ""org.opencontainers.image.revision=$CI_COMMIT_SHA""
+      --annotations ""tag=$IMAGE_TAG""
+    - >-
+      CERTIFICATE_IDENTITY=""$CI_PROJECT_URL//.gitlab-ci.yml@refs/$(
+      [[ -n ""$CI_COMMIT_TAG"" ]] && echo 'tags' || echo 'heads'
+      )/$IMAGE_TAG"";
+    - >-
+      cosign verify
+      --annotations ""tag=$IMAGE_TAG""
+      --certificate-identity ""$CERTIFICATE_IDENTITY""
+      --certificate-oidc-issuer ""$CI_SERVER_URL""
+      ""$IMAGE_DIGEST"" | jq .
+"

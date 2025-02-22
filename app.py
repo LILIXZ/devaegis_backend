@@ -1,5 +1,4 @@
 import logging
-import os
 import sys
 
 from flask import Flask
@@ -9,7 +8,7 @@ from flask_cors import CORS
 from cli_management_commands.cli_db_management import database_healthcheck
 from extensions import db, ma
 from settings import Config
-from views import search_views
+from views import control_views, search_views
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +34,9 @@ def register_blueprints(app):
     app_data_url_prefix = app.config["APP_DATA_URL_PREFIX"]
     app.register_blueprint(
         search_views.blueprint, url_prefix=f"{app_data_url_prefix}/search"
+    )
+    app.register_blueprint(
+        control_views.blueprint, url_prefix=f"{app_data_url_prefix}/search_by_control"
     )
     pass
 

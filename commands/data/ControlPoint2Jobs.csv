@@ -1,0 +1,20 @@
+Control Point,Job,Job Name,Path
+Automated Build and Deploy,Build.latest.gitlab-ci.yml,build_artifact,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Build.latest.gitlab-ci.yml
+Container Image Scanning,Container-Scanning.latest.gitlab-ci.yml,container_scanning,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Container-Scanning.latest.gitlab-ci.yml
+Dependency Scanning,Dependency-Scanning.latest.gitlab-ci.yml,gemnasium-dependency_scanning,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Dependency-Scanning.latest.gitlab-ci.yml
+Dependency Scanning,Dependency-Scanning.latest.gitlab-ci.yml,gemnasium-maven-dependency_scanning,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Dependency-Scanning.latest.gitlab-ci.yml
+Dependency Scanning,Dependency-Scanning.latest.gitlab-ci.yml,gemnasium-python-dependency_scanning,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Dependency-Scanning.latest.gitlab-ci.yml
+Automated Build and Deploy,Deploy.latest.gitlab-ci.yml,review & stop_review,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Deploy.latest.gitlab-ci.yml
+Automated Build and Deploy,Deploy.latest.gitlab-ci.yml,staging,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Deploy.latest.gitlab-ci.yml
+Automated Build and Deploy,Deploy.latest.gitlab-ci.yml,canary,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Deploy.latest.gitlab-ci.yml
+Static Analysis,SAST-IaC.latest.gitlab-ci.yml,kics-iac-sast,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST-IaC.latest.gitlab-ci.yml
+Static Analysis,SAST.latest.gitlab-ci.yml,gitlab-advanced-sast,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml
+Static Analysis,SAST.latest.gitlab-ci.yml,gitlab-static-reachability,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml
+Static Analysis,SAST.latest.gitlab-ci.yml,kubesec-sast,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml
+Static Analysis,SAST.latest.gitlab-ci.yml,pmd-apex-sast,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml
+Static Analysis,SAST.latest.gitlab-ci.yml,semgrep-sast,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml
+Static Analysis,SAST.latest.gitlab-ci.yml,sobelow-sast,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml
+Static Analysis,SAST.latest.gitlab-ci.yml,spotbugs-sast,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.latest.gitlab-ci.yml
+Secret Detection,Secret-Detection.latest.gitlab-ci.yml,secret_detection,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/Secret-Detection.latest.gitlab-ci.yml
+Static Analysis,Fortify-FoD-sast.gitlab-ci.yml,fortify_fod_sast,https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Security/Fortify-FoD-sast.gitlab-ci.yml
+Software Artefact Signing,Cosign.gitlab-ci.yml,build_and_sign,https://gitlab.com/components/package/-/blob/main/templates/signing/signing.gitlab-ci.yml
