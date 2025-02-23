@@ -29,9 +29,9 @@ def filter_for_templates():
 
     # Retrieve the FAISS index
     cursor.execute(
-        "SELECT job_name, job_path, job_description, job_script FROM job_templates T0"
-        "INNER JOIN control_to_job_templates T1 ON T0.id = T1.job_template_id"
-        "INNER JOIN devaegis_compliance_control T2 ON T1.control_id = T2.id"
+        "SELECT job_name, job_path, job_description, job_script FROM job_templates T0 "
+        "INNER JOIN control_to_job_templates T1 ON T0.id = T1.job_template_id "
+        "INNER JOIN devaegis_compliance_control T2 ON T1.control_id = T2.id "
         "WHERE T2.title = %s;",
         (control_point,),
     )
