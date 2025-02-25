@@ -17,10 +17,9 @@ def filter_for_templates():
     auth_header = request.headers.get("Authorization")
     if auth_header != current_app.config["AUTH_TOKEN"]:
         return make_response(jsonify({"details": "Permission denied."}), 401)
-    print(request.form)
 
-    control_points = request.form.getlist("control_points")
-    project_info = request.form.get("project_info")
+    control_points = request.json.get("control_points", [])
+    project_info = request.json.get("project_info")
 
     print("INPUT CONTROL POINTS", control_points)
     print("INPUT PROJECT INFO", project_info)
