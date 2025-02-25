@@ -21,6 +21,9 @@ def filter_for_templates():
     control_points = request.form.getlist("control_points")
     project_info = request.form.get("project_info")
 
+    print("INPUT CONTROL POINTS", control_points)
+    print("INPUT PROJECT INFO", project_info)
+
     DB_PARAMS = {
         "host": current_app.config["POSTGRES_HOSTNAME"],
         "user": current_app.config["POSTGRES_USER"],
