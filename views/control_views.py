@@ -23,6 +23,8 @@ def filter_for_templates():
 
     print("INPUT CONTROL POINTS", control_points)
     print("INPUT PROJECT INFO", project_info)
+    logger.debug("INPUT CONTROL POINTS: " + control_points.__str__())
+    logger.debug("INPUT PROJECT INFO: " + project_info)
 
     DB_PARAMS = {
         "host": current_app.config["POSTGRES_HOSTNAME"],
