@@ -5,7 +5,7 @@ from flask import Flask
 from flask_caching import Cache
 from flask_cors import CORS
 
-from cli_management_commands.cli_db_management import database_healthcheck
+# from cli_management_commands.cli_db_management import database_healthcheck
 from extensions import db, ma
 from settings import Config
 from views import control_views, search_views
@@ -51,8 +51,8 @@ def register_shell_context(app):
     app.shell_context_processor(shell_context)
 
 
-def register_cli_commands(app):
-    app.cli.add_command(database_healthcheck)
+# def register_cli_commands(app):
+#     app.cli.add_command(database_healthcheck)
 
 
 def configure_logger(app):
@@ -82,7 +82,7 @@ def create_app():
     register_extensions(app)
     register_blueprints(app)
     register_shell_context(app)
-    register_cli_commands(app)
+    # register_cli_commands(app)
     configure_logger(app)
 
     return app
