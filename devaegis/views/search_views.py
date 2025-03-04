@@ -5,8 +5,8 @@ import faiss
 import psycopg2
 from flask import Blueprint, current_app, jsonify, make_response, request
 
-from utils.search_utils import (extract_attributes, fusion_retrieval,
-                                rerank_documents)
+from devaegis.utils.search_utils import (extract_attributes, fusion_retrieval,
+                                         rerank_documents)
 
 blueprint = Blueprint("search_views", __name__)
 logger = logging.getLogger(__name__)

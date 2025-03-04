@@ -1,6 +1,6 @@
 # this is to prepare local development environment
 version: "3.8"
-name: "devaegis_backend_service"
+#name: "devaegis_backend_service"
 
 services:
   devaegis_backend:
@@ -19,7 +19,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-        FLASK_APP: app.py
+        FLASK_APP: autoapp.py
     env_file:
       - .env
 

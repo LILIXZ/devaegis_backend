@@ -2,7 +2,7 @@ import uuid
 
 from sqlalchemy.dialects.postgresql import UUID
 
-from extensions import db
+from devaegis.extensions import db
 
 
 class FaissIndex(db.Model):

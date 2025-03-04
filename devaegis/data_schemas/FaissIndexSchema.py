@@ -1,5 +1,5 @@
-from extensions import ma
-from models.faiss_backend import FaissIndex
+from devaegis.extensions import ma
+from devaegis.models.faiss_backend import FaissIndex
 
 
 class FaissIndexSchema(ma.SQLAlchemySchema):

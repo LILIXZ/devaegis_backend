@@ -2,9 +2,8 @@ import logging
 
 import psycopg2
 from flask import Blueprint, current_app, jsonify, make_response, request
-from sqlalchemy import text
 
-from utils.search_utils import retrieve_relevant_template_with_project_info
+from devaegis.utils.search_utils import retrieve_relevant_template_with_project_info
 
 blueprint = Blueprint("control_views", __name__)
 logger = logging.getLogger(__name__)

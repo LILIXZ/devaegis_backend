@@ -5,7 +5,7 @@ set -o pipefail
 set -o nounset
 
 echo "starting devaegis backend service"
-gunicorn 'app:create_app()' \
+gunicorn 'devaegis.app:create_app()' \
     --reload \
     --timeout 180 \
     --workers 6 \
