@@ -43,6 +43,7 @@ def filter_for_templates():
     result = []
 
     for control_point in control_points:
+        logger.info("INFO CONTROL POINT: " + control_point)
         # Retrieve the job templates
         query = f"""
         SELECT job_name, job_path, job_description, job_script FROM job_templates T0 
@@ -64,6 +65,8 @@ def filter_for_templates():
             template_list, project_info
         )
         result.append(matched_template)
+
+    logger.info("INFO TEMPLATE LENGTH: " + str(len(result)))
 
     # Close connection
     cursor.close()
