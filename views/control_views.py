@@ -2,6 +2,7 @@ import logging
 
 import psycopg2
 from flask import Blueprint, current_app, jsonify, make_response, request
+from sqlalchemy import text
 
 from utils.search_utils import retrieve_relevant_template_with_project_info
 
@@ -42,13 +43,13 @@ def filter_for_templates():
 
     for control_point in control_points:
         # Retrieve the job templates
-        cursor.execute(
-            "SELECT job_name, job_path, job_description, job_script FROM job_templates T0 "
-            "INNER JOIN control_to_job_templates T1 ON T0.id = T1.job_template_id "
-            "INNER JOIN devaegis_compliance_control T2 ON T1.control_id = T2.id "
-            "WHERE T2.title = %s;",
-            (control_point,),
-        )
+        query = f"""
+        SELECT job_name, job_path, job_description, job_script FROM job_templates T0 
+        INNER JOIN control_to_job_templates T1 ON T0.id = T1.job_template_id 
+        INNER JOIN devaegis_compliance_control T2 ON T1.control_id = T2.id 
+        WHERE T2.title = {control_point};
+        """
+        cursor.execute(text(query))
         rows = cursor.fetchall()
 
         template_list = [
