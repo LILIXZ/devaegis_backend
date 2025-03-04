@@ -69,9 +69,9 @@ def configure_logger(app):
     if not app.logger.handlers:
         app.logger.addHandler(handler)
     # if app.config["ENV"] == PROD:
-    #     gunicorn_logger = logging.getLogger("gunicorn.error")
-    #     app.logger.handlers = gunicorn_logger.handlers
-    #     app.logger.setLevel(log_level)
+    gunicorn_logger = logging.getLogger("gunicorn.error")
+    app.logger.handlers = gunicorn_logger.handlers
+    app.logger.setLevel(log_level)
 
 
 def create_app():
