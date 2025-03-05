@@ -56,19 +56,20 @@ def filter_for_templates():
         cursor.execute(query)
         rows = cursor.fetchall()
 
-        template_list = [
-            {
-                "job_name": row[0],
-                "job_path": row[1],
-                "job_description": row[2],
-            }
-            for row in rows
-        ]
+        if len(rows) > 0:
+            template_list = [
+                {
+                    "job_name": row[0],
+                    "job_path": row[1],
+                    "job_description": row[2],
+                }
+                for row in rows
+            ]
 
-        matched_job = retrieve_relevant_template_with_project_info(
-            template_list, project_info
-        )
-        matched_jobs.append(matched_job)
+            matched_job = retrieve_relevant_template_with_project_info(
+                template_list, project_info
+            )
+            matched_jobs.append(matched_job)
 
     result = []
 
