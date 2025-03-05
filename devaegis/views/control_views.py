@@ -3,7 +3,8 @@ import logging
 import psycopg2
 from flask import Blueprint, current_app, jsonify, make_response, request
 
-from devaegis.utils.search_utils import retrieve_relevant_template_with_project_info
+from devaegis.utils.search_utils import \
+    retrieve_relevant_template_with_project_info
 
 blueprint = Blueprint("control_views", __name__)
 logger = logging.getLogger(__name__)
@@ -40,10 +41,11 @@ def filter_for_templates():
     conn = psycopg2.connect(**DB_PARAMS)
     cursor = conn.cursor()
 
-    result = []
+    matched_jobs = []
 
     for control_point in control_points:
         logger.info("INFO CONTROL POINT: " + control_point)
+
         # Retrieve the job templates
         query = f"""
         SELECT job_name, job_path, job_description, job_script FROM job_templates T0 
@@ -56,17 +58,28 @@ def filter_for_templates():
 
         template_list = [
             {
-                "job_script": row[3],
+                "job_name": row[0],
+                "job_path": row[1],
+                "job_description": row[2],
             }
             for row in rows
         ]
 
-        matched_template = retrieve_relevant_template_with_project_info(
+        matched_job = retrieve_relevant_template_with_project_info(
             template_list, project_info
         )
-        result.append(matched_template)
+        matched_jobs.append(matched_job)
 
-    logger.info("INFO TEMPLATE LENGTH: " + str(len(result)))
+    result = []
+
+    for job in matched_jobs:
+        query = f"""
+                SELECT job_script FROM job_templates
+                WHERE job_name = '{job['job_name']}' and job_path = '{job['job_path']}';
+        """
+        cursor.execute(query)
+        row = cursor.fetchone()
+        result.append(row[0])
 
     # Close connection
     cursor.close()

@@ -7,8 +7,8 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-
 logger = logging.getLogger(__name__)
+
 
 def extract_keywords(text):
     return text.split()
@@ -50,11 +50,11 @@ def fusion_retrieval(vectorstore, query: str, k: int = 5, alpha: float = 0.5):
     # Step 4: Normalize scores
     vector_scores = np.array([score for _, score in vector_results])
     vector_scores = 1 - (vector_scores - np.min(vector_scores)) / (
-            np.max(vector_scores) - np.min(vector_scores) + epsilon
+        np.max(vector_scores) - np.min(vector_scores) + epsilon
     )
 
     bm25_scores = (bm25_scores - np.min(bm25_scores)) / (
-            np.max(bm25_scores) - np.min(bm25_scores) + epsilon
+        np.max(bm25_scores) - np.min(bm25_scores) + epsilon
     )
 
     # Step 5: Combine scores
@@ -76,9 +76,8 @@ class RatingScore(BaseModel):
 
 
 class JobTemplate(BaseModel):
-    job_template: str = Field(
-        ..., description="The most matched job template to a project."
-    )
+    job_name: str = Field(..., description="The most matched job's name to a project.")
+    job_path: str = Field(..., description="The most matched job's path to a project.")
 
 
 def rerank_documents(query, docs, top_n=5):
@@ -134,13 +133,14 @@ def retrieve_relevant_template_with_project_info(template_list, project_info):
     prompt_template = PromptTemplate(
         input_variables=["template_list", "project_info"],
         template="""Based on the project info, find the most suitable CICD job template. Consider the specific context and intent of the query, not just keyword matches.
-                    Return job_script only.   
+                    Do not just return job name, return full job script only.   
                     Project Info: {project_info}
                     Job Templates: {template_list}
                     Most matched template:""",
     )
-    llm = ChatOpenAI(model="gpt-4o")
+    llm = ChatOpenAI(model="gpt-3.5-turbo")
     chain = prompt_template | llm.with_structured_output(JobTemplate)
-    job_template = chain.invoke({"project_info": project_info, "template_list": template_list}).job_template
-    return job_template
-
+    job_details = chain.invoke(
+        {"project_info": project_info, "template_list": template_list}
+    )
+    return {"job_name": job_details.job_name, "job_path": job_details.job_path}
