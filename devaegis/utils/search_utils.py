@@ -93,8 +93,8 @@ chain = prompt_template | llm.with_structured_output(RatingScore)
 async def process_doc(query, doc):
     """Asynchronously process a single document"""
     try:
-        score = await chain.ainvoke({"query": query, "doc": doc}).relevance_score
-        return doc, float(score)
+        result = await chain.ainvoke({"query": query, "doc": doc})
+        return doc, float(result.relevance_score)
     except (ValueError, TypeError):
         return doc, 0  # Default score in case of errors
 
