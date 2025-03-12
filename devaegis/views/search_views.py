@@ -1,5 +1,7 @@
 import logging
 import pickle
+import time
+from datetime import datetime
 
 import faiss
 import psycopg2
@@ -23,6 +25,8 @@ def filter_for_templates():
 
     user_query = request.form.get("user_query")
     limit = int(request.form.get("limit", 1))
+
+    logger.info(f"INFO USER_QUERY {user_query}")
 
     DB_PARAMS = {
         "host": current_app.config["POSTGRES_HOSTNAME"],
@@ -64,11 +68,18 @@ def filter_for_templates():
         index_to_docstore_id=index_to_docstore_id,
     )
 
+    logger.info("INFO BEFORE FUSION RETRIEVAL")
+    start = datetime.now()
     # Perform fusion retrieval
     top_docs = fusion_retrieval(vector_store, user_query, k=10, alpha=0.4)
+    logger.info(f"INFO DONE FUSION RETRIEVAL {datetime.now() - start}")
+
     docs_content = [doc.page_content for doc in top_docs]
 
+    logger.info("INFO BEFORE RERANK DOCUMENTS")
+    start = datetime.now()
     reranked_docs = rerank_documents(user_query, docs_content, limit)
+    logger.info(f"INFO DONE RERANK DOCUMENTS {datetime.now() - start}")
 
     result = [extract_attributes(doc) for doc in reranked_docs]
 

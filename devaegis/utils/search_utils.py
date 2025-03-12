@@ -34,9 +34,6 @@ def fusion_retrieval(vectorstore, query: str, k: int = 5, alpha: float = 0.5):
     # Step 1: Get all documents from the vectorstore
     all_docs = vectorstore.similarity_search("", k=vectorstore.index.ntotal)
 
-    # Step 2: Perform BM25 search
-    # bm25_scores = bm25.get_scores(query.split())
-
     # Step 2: Keywords Similarity score
     keywords = extract_keywords(query)
     vectorizer = TfidfVectorizer()
