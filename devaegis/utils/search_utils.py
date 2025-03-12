@@ -88,7 +88,7 @@ def rerank_documents(query, docs, top_n=5):
         Document: {doc}
         Relevance Score:""",
     )
-    llm = ChatOpenAI(model="gpt-4o")
+    llm = ChatOpenAI(model="gpt-3.5-turbo")
     chain = prompt_template | llm.with_structured_output(RatingScore)
 
     scored_docs = []
