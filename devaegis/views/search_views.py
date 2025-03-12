@@ -8,7 +8,7 @@ import psycopg2
 from flask import Blueprint, current_app, jsonify, make_response, request
 
 from devaegis.utils.search_utils import (extract_attributes, fusion_retrieval,
-                                         rerank_documents)
+                                         rerank_documents, rerank_documents_sync)
 
 blueprint = Blueprint("search_views", __name__)
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ def filter_for_templates():
 
     logger.info("INFO BEFORE RERANK DOCUMENTS")
     start = datetime.now()
-    reranked_docs = rerank_documents(user_query, docs_content, limit)
+    reranked_docs = rerank_documents_sync(user_query, docs_content, limit)
     logger.info(f"INFO DONE RERANK DOCUMENTS {datetime.now() - start}")
 
     result = [extract_attributes(doc) for doc in reranked_docs]

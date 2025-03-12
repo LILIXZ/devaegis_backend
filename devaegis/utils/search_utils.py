@@ -1,9 +1,10 @@
+import asyncio
 import logging
 
 import numpy as np
 from langchain_core.prompts import PromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -77,28 +78,40 @@ class JobTemplate(BaseModel):
     job_path: str = Field(..., description="The most matched job's path to a project.")
 
 
-def rerank_documents(query, docs, top_n=5):
-    prompt_template = PromptTemplate(
-        input_variables=["query", "doc"],
-        template="""On a scale of 1-10, rate the relevance of the following CICD pipeline to the query. Consider the specific context and intent of the query, not just keyword matches.
-        Query: {query}
-        Document: {doc}
-        Relevance Score:""",
-    )
-    llm = ChatOpenAI(model="gpt-3.5-turbo")
-    chain = prompt_template | llm.with_structured_output(RatingScore)
+# Initialize LLM and prompt template once (outside the function for efficiency)
+llm = ChatOpenAI(model="gpt-3.5-turbo")
+prompt_template = PromptTemplate(
+    input_variables=["query", "doc"],
+    template="""On a scale of 1-10, rate the relevance of the following CICD pipeline to the query. Consider the specific context and intent of the query, not just keyword matches.
+    Query: {query}
+    Document: {doc}
+    Relevance Score:""",
+)
+chain = prompt_template | llm.with_structured_output(RatingScore)
 
-    scored_docs = []
-    for doc in docs:
-        score = chain.invoke({"query": query, "doc": doc}).relevance_score
-        try:
-            score = float(score)
-        except ValueError:
-            score = 0  # Default score if parsing fails
-        scored_docs.append((doc, score))
 
+async def process_doc(query, doc):
+    """Asynchronously process a single document"""
+    try:
+        score = await chain.ainvoke({"query": query, "doc": doc}).relevance_score
+        return doc, float(score)
+    except (ValueError, TypeError):
+        return doc, 0  # Default score in case of errors
+
+
+async def rerank_documents(query, docs, top_n=5):
+    """Re-rank documents based on relevance score using async batch processing"""
+    tasks = [process_doc(query, doc) for doc in docs]
+    scored_docs = await asyncio.gather(*tasks)
+
+    # Sort and return top_n documents
     scored_docs.sort(key=lambda x: x[1], reverse=True)
     return [doc for doc, _ in scored_docs[:top_n]]
+
+
+# To call the function synchronously (if required)
+def rerank_documents_sync(query, docs, top_n=5):
+    return asyncio.run(rerank_documents(query, docs, top_n))
 
 
 def extract_attributes(page_content):
