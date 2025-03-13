@@ -23,8 +23,8 @@ def filter_for_templates():
     if auth_header != current_app.config["AUTH_TOKEN"]:
         return make_response(jsonify({"details": "Permission denied."}), 401)
 
-    user_query = request.form.get("user_query")
-    limit = int(request.form.get("limit", 1))
+    user_query = request.json.get("user_query")
+    limit = int(request.json.get("limit", 1))
 
     logger.info(f"INFO USER_QUERY {user_query}")
 
